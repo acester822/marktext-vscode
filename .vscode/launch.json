@@ -12,6 +12,25 @@
         "${workspaceFolder}/out/**/*.js"
       ],
       "preLaunchTask": "npm: build"
+    },
+    {
+      "name": "Attach to Webview",
+      "type": "vscode-webview",
+      "request": "attach",
+      "webviewId": "marktextEditor",
+      "outFiles": [
+        "${workspaceFolder}/out/webview/main.js"
+      ]
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Run Extension + Webview",
+      "configurations": [
+        "Run Extension",
+        "Attach to Webview"
+      ],
+      "preLaunchTask": "npm: build"
     }
   ]
 }

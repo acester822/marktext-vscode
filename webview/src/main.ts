@@ -20,6 +20,7 @@ import {
   TableColumnToolbar,
   TableDragBar,
   TableRowColumMenu,
+  MarkdownToHtml,
   en,
   zhCN,
 } from '@muyajs/core';
@@ -154,69 +155,207 @@ function applyTheme(theme: 'light' | 'dark') {
   boot(md, theme, currentUri);
 }
 
-// ---------- custom right-click menu ----------
-// muya (the engine we bundle) does not ship MarkText's rich context menu, so
-// we register our own. It offers the actions the engine actually exposes:
-// undo/redo (real muya API) plus the standard edit operations.
+// ---------- custom right-click menu (MarkText-structured, Option B) ----------
+// muya (the engine we bundle) does not ship MarkText's rich context menu and
+// exposes no public format/paragraph command API, so we render the full
+// MarkText menu structure but only enable the actions muya actually supports.
+// Unsupported items are shown greyed-out and inert (honest about limits until
+// we later reimplement those transforms against muya state).
+type MenuAction = () => void;
+interface MenuItem {
+  label: string;
+  shortcut?: string;
+  action?: MenuAction;     // undefined => greyed/disabled
+  sep?: boolean;           // separator row
+  submenu?: MenuItem[];    // nested submenu
+}
+
+// Real actions backed by muya / browser APIs.
+function copyMarkdown() {
+  if (!muya) return;
+  const md = muya.getMarkdown();
+  navigator.clipboard?.writeText(md);
+}
+async function copyHtml() {
+  if (!muya) return;
+  const html = await new MarkdownToHtml(muya.getMarkdown(), muya).generate({});
+  navigator.clipboard?.writeText(html);
+}
+async function pastePlain() {
+  const text = await navigator.clipboard.readText();
+  document.execCommand('insertText', false, text);
+}
+
+const MENU: MenuItem[] = [
+  // Edit submenu
+  { label: 'Edit', submenu: [
+    { label: 'Undo', shortcut: 'Ctrl+Z', action: () => muya?.undo() },
+    { label: 'Redo', shortcut: 'Ctrl+Shift+Z', action: () => muya?.redo() },
+    { label: '', sep: true },
+    { label: 'Cut', shortcut: 'Ctrl+X', action: () => document.execCommand('cut') },
+    { label: 'Copy', shortcut: 'Ctrl+C', action: () => document.execCommand('copy') },
+    { label: 'Paste', shortcut: 'Ctrl+V', action: () => document.execCommand('paste') },
+    { label: 'Copy as Markdown', shortcut: 'Ctrl+Shift+C', action: copyMarkdown },
+    { label: 'Copy as HTML', action: copyHtml },
+    { label: 'Paste as Plain Text', shortcut: 'Ctrl+Shift+V', action: pastePlain },
+    { label: '', sep: true },
+    { label: 'Select All', shortcut: 'Ctrl+A', action: () => document.execCommand('selectAll') },
+    { label: 'Duplicate Paragraph', shortcut: 'Ctrl+Alt+P', action: () => muya?.insertParagraph('after') },
+    { label: 'New Paragraph', shortcut: 'Ctrl+Shift+N', action: () => muya?.insertParagraph('after') },
+    { label: 'Delete Paragraph', shortcut: 'Ctrl+Shift+D' },
+    { label: '', sep: true },
+    { label: 'Find', shortcut: 'Ctrl+F' },
+    { label: 'Replace', shortcut: 'Ctrl+R' },
+  ]},
+  // Paragraph submenu
+  { label: 'Paragraph', submenu: [
+    { label: 'Heading 1', shortcut: 'Ctrl+Shift+1' },
+    { label: 'Heading 2', shortcut: 'Ctrl+Shift+2' },
+    { label: 'Heading 3', shortcut: 'Ctrl+Shift+3' },
+    { label: 'Heading 4', shortcut: 'Ctrl+Shift+4' },
+    { label: 'Heading 5', shortcut: 'Ctrl+Shift+5' },
+    { label: 'Heading 6', shortcut: 'Ctrl+Shift+6' },
+    { label: '', sep: true },
+    { label: 'Upgrade Heading', shortcut: 'Ctrl+Plus' },
+    { label: 'Degrade Heading', shortcut: 'Ctrl+-' },
+    { label: '', sep: true },
+    { label: 'Table', shortcut: 'Ctrl+Shift+T' },
+    { label: 'Code Block', shortcut: 'Ctrl+Shift+K' },
+    { label: 'Quote Block', shortcut: 'Ctrl+Shift+Q' },
+    { label: 'Math Block', shortcut: 'Ctrl+Alt+N' },
+    { label: 'HTML Block', shortcut: 'Ctrl+Alt+H' },
+    { label: 'Ordered List', shortcut: 'Ctrl+G' },
+    { label: 'Bullet List', shortcut: 'Ctrl+H' },
+    { label: 'Task List', shortcut: 'Ctrl+Alt+X' },
+    { label: '', sep: true },
+    { label: 'Paragraph', shortcut: 'Ctrl+Shift+0' },
+    { label: 'Horizontal Line', shortcut: 'Ctrl+Shift+U' },
+    { label: 'Front Matter', shortcut: 'Ctrl+Alt+Y' },
+  ]},
+  // Format submenu
+  { label: 'Format', submenu: [
+    { label: 'Bold', shortcut: 'Ctrl+B' },
+    { label: 'Italic', shortcut: 'Ctrl+I' },
+    { label: 'Underline', shortcut: 'Ctrl+U' },
+    { label: 'Superscript' },
+    { label: 'Subscript' },
+    { label: 'Highlight', shortcut: 'Ctrl+Shift+H' },
+    { label: 'Inline Code', shortcut: 'Ctrl+`' },
+    { label: 'Inline Math', shortcut: 'Ctrl+Shift+M' },
+    { label: 'Strikethrough', shortcut: 'Ctrl+D' },
+    { label: 'Hyperlink', shortcut: 'Ctrl+L' },
+    { label: 'Image', shortcut: 'Ctrl+Shift+I' },
+    { label: 'Clear Format', shortcut: 'Ctrl+Shift+R' },
+  ]},
+  { label: '', sep: true },
+  { label: 'Undo', shortcut: 'Ctrl+Z', action: () => muya?.undo() },
+  { label: 'Redo', shortcut: 'Ctrl+Shift+Z', action: () => muya?.redo() },
+  { label: '', sep: true },
+  { label: 'Cut', shortcut: 'Ctrl+X', action: () => document.execCommand('cut') },
+  { label: 'Copy', shortcut: 'Ctrl+C', action: () => document.execCommand('copy') },
+  { label: 'Paste', shortcut: 'Ctrl+V', action: () => document.execCommand('paste') },
+  { label: '', sep: true },
+  { label: 'Copy as Rich Text', shortcut: 'Ctrl+Shift+C', action: copyMarkdown },
+  { label: 'Copy as HTML', action: copyHtml },
+  { label: 'Paste as Plain Text', shortcut: 'Ctrl+Shift+V', action: pastePlain },
+];
+
 function setupContextMenu() {
   const menu = document.createElement('div');
   menu.className = 'mtx-context-menu';
   menu.style.cssText = [
     'position:fixed', 'z-index:99999', 'display:none',
-    'min-width:160px', 'padding:4px 0', 'border-radius:6px',
+    'min-width:200px', 'padding:4px 0', 'border-radius:6px',
     'background:#fff', 'color:#24292e', 'box-shadow:0 2px 12px rgba(0,0,0,.18)',
     'font:13px sans-serif', 'user-select:none',
   ].join(';');
   document.body.appendChild(menu);
 
-  type Item = { label: string; action: () => void; sep?: boolean };
-  const items: Item[] = [
-    { label: 'Undo', action: () => muya?.undo() },
-    { label: 'Redo', action: () => muya?.redo() },
-    { label: 'Cut', action: () => document.execCommand('cut'), sep: true },
-    { label: 'Copy', action: () => document.execCommand('copy') },
-    { label: 'Paste', action: () => document.execCommand('paste') },
-    { label: 'Select All', action: () => document.execCommand('selectAll'), sep: true },
-  ];
+  // Open submenu popovers live in a stack; we keep at most one open at a time.
+  let openSub: HTMLElement | null = null;
+
+  function clearSubs() {
+    if (openSub) { openSub.remove(); openSub = null; }
+  }
+
+  function makeRow(item: MenuItem): HTMLElement {
+    if (item.sep) {
+      const hr = document.createElement('div');
+      hr.style.cssText = 'height:1px;margin:4px 0;background:#e1e4e8';
+      return hr;
+    }
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:18px;padding:6px 16px;white-space:nowrap';
+    const enabled = !!item.action;
+    if (!enabled) row.style.opacity = '0.4';
+    if (item.submenu) {
+      const lbl = document.createElement('span');
+      lbl.textContent = item.label;
+      const arrow = document.createElement('span');
+      arrow.textContent = '▸';
+      arrow.style.cssText = 'margin-left:8px;color:#888';
+      row.appendChild(lbl); row.appendChild(arrow);
+    } else {
+      const lbl = document.createElement('span');
+      lbl.textContent = item.label;
+      row.appendChild(lbl);
+      if (item.shortcut) {
+        const sc = document.createElement('span');
+        sc.textContent = item.shortcut;
+        sc.style.cssText = 'color:#888;font-size:11px';
+        row.appendChild(sc);
+      }
+    }
+    if (enabled && !item.submenu) {
+      row.style.cursor = 'pointer';
+      row.addEventListener('mouseenter', () => { row.style.background = '#f0f3f6'; clearSubs(); });
+      row.addEventListener('mouseleave', () => { row.style.background = 'transparent'; });
+      row.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        item.action!();
+        hide();
+      });
+    } else if (item.submenu) {
+      const subItems = item.submenu;
+      row.style.cursor = 'default';
+      row.addEventListener('mouseenter', (e) => {
+        clearSubs();
+        const sub = document.createElement('div');
+        sub.className = 'mtx-context-submenu';
+        sub.style.cssText = [
+          'position:fixed', 'z-index:100000', 'min-width:200px', 'padding:4px 0',
+          'border-radius:6px', 'background:#fff', 'color:#24292e',
+          'box-shadow:0 2px 12px rgba(0,0,0,.18)', 'font:13px sans-serif',
+        ].join(';');
+        for (const subItem of subItems) sub.appendChild(makeRow(subItem));
+        document.body.appendChild(sub);
+        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        sub.style.left = `${r.right - 4}px`;
+        sub.style.top = `${r.top}px`;
+        openSub = sub;
+      });
+    }
+    return row;
+  }
 
   function render() {
     menu.innerHTML = '';
-    for (const it of items) {
-      if (it.sep) {
-        const hr = document.createElement('div');
-        hr.style.cssText = 'height:1px;margin:4px 0;background:#e1e4e8';
-        menu.appendChild(hr);
-        continue;
-      }
-      const el = document.createElement('div');
-      el.textContent = it.label;
-      el.style.cssText = 'padding:6px 16px;cursor:pointer';
-      el.addEventListener('mouseenter', () => { el.style.background = '#f0f3f6'; });
-      el.addEventListener('mouseleave', () => { el.style.background = 'transparent'; });
-      el.addEventListener('mousedown', (e) => {
-        e.preventDefault(); // keep the editor selection intact
-        it.action();
-        hide();
-      });
-      menu.appendChild(el);
-    }
+    for (const item of MENU) menu.appendChild(makeRow(item));
   }
   render();
 
   function show(x: number, y: number) {
+    clearSubs();
     menu.style.display = 'block';
     const rect = menu.getBoundingClientRect();
-    const px = Math.min(x, window.innerWidth - rect.width - 4);
-    const py = Math.min(y, window.innerHeight - rect.height - 4);
-    menu.style.left = `${px}px`;
-    menu.style.top = `${py}px`;
+    menu.style.left = `${Math.min(x, window.innerWidth - rect.width - 4)}px`;
+    menu.style.top = `${Math.min(y, window.innerHeight - rect.height - 4)}px`;
   }
   function hide() {
     menu.style.display = 'none';
+    clearSubs();
   }
 
-  // Attach on document (capture) so it fires regardless of where the editor
-  // mounts its nodes; the container reference is only used for the editor.
   document.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     show(e.clientX, e.clientY);

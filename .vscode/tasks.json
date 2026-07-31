@@ -10,6 +10,14 @@
         "isDefault": true
       },
       "problemMatcher": []
+    },
+    {
+      "type": "npm",
+      "script": "watch",
+      "label": "npm: watch",
+      "isBackground": true,
+      "problemMatcher": [],
+      "group": "none"
     }
   ]
 }

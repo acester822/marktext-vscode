@@ -26,7 +26,7 @@ import {
 import type { IMuyaOptions, ILocale } from '@muyajs/core';
 
 // ---------- host <-> webview message protocol ----------
-type InitMsg = { type: 'init'; markdown: string; theme: 'light' | 'dark'; uri: string };
+type InitMsg = { type: 'init'; markdown: string; theme: 'light' | 'dark'; uri: string; dev?: boolean };
 type SetMarkdownMsg = { type: 'setMarkdown'; markdown: string };
 type ThemeMsg = { type: 'theme'; theme: 'light' | 'dark' };
 type WorkspaceImageMsg = { type: 'workspaceImage'; requestId: number; path: string | null };
@@ -38,8 +38,10 @@ type FromWebview =
   | { type: 'requestWorkspaceImage'; requestId: number };
 
 const vscode = (window as any).acquireVsCodeApi ? (window as any).acquireVsCodeApi() : null;
+let dev = false;
 
 function post(msg: FromWebview) {
+  if (dev) console.log('[marktext-webview -> host]', msg.type);
   vscode?.postMessage(msg);
 }
 
@@ -128,6 +130,7 @@ function boot(markdown: string, theme: 'light' | 'dark', uri: string) {
     autoPairQuote: true,
     preferLooseListItem: true,
   };
+  if (dev) console.log('[marktext-webview] booting muya for', uri);
   muya = new Muya(container, options);
   muya.locale(LOCALES['en']);
   muya.init();
@@ -153,8 +156,10 @@ function applyTheme(theme: 'light' | 'dark') {
 
 window.addEventListener('message', (ev: MessageEvent) => {
   const msg = ev.data as ToWebview;
+  if (dev) console.log('[marktext-webview <- host]', msg.type);
   switch (msg.type) {
     case 'init':
+      dev = !!msg.dev;
       boot(msg.markdown, msg.theme, msg.uri);
       break;
     case 'setMarkdown':

@@ -12,12 +12,23 @@
     "Other"
   ],
   "main": "./out/extension.js",
-  "activationEvents": [],
+  "activationEvents": [
+    "onCommand:marktext-editor.open",
+    "onCommand:marktext-editor.reloadWebview"
+  ],
   "contributes": {
     "commands": [
       {
         "command": "marktext-editor.open",
         "title": "MarkText: Open WYSIWYG Editor"
+      },
+      {
+        "command": "marktext-editor.reloadWebview",
+        "title": "MarkText: Reload Webview"
+      },
+      {
+        "command": "marktext-editor.toggleDev",
+        "title": "MarkText: Toggle Dev Mode (verbose logging)"
       }
     ],
     "menus": {
@@ -42,6 +53,7 @@
     "build:web": "esbuild webview/src/muya-styles.css --bundle --loader:.css=css --loader:.woff=dataurl --loader:.woff2=dataurl --loader:.ttf=dataurl --loader:.svg=dataurl --loader:.png=dataurl --outfile=out/webview/main.css --define:process.env.NODE_ENV='\"production\"' && esbuild webview/src/main.ts --bundle --format=iife --outfile=out/webview/main.js --sourcemap --alias:@muyajs/core=/home/ftr/Apps/marktext/packages/muya/lib/es/index.js --loader:.png=dataurl --loader:.svg=dataurl --loader:.woff=dataurl --loader:.woff2=dataurl --loader:.ttf=dataurl --loader:.css=empty --define:process.env.NODE_ENV='\"production\"'",
     "build": "npm run build:host && npm run build:web",
     "watch": "npm run build:host -- --watch & npm run build:web -- --watch & wait",
+    "dev": "npm run watch",
     "vscode:prepublish": "npm run build"
   },
   "devDependencies": {

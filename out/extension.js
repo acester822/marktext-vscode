@@ -39,6 +39,10 @@ var path = __toESM(require("path"));
 var fs = __toESM(require("fs"));
 var activePanel;
 var applyingFromWebview = false;
+var devMode = false;
+var log = (...args) => {
+  if (devMode) console.log("[marktext]", ...args);
+};
 function getNonce() {
   let text = "";
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -52,6 +56,7 @@ function getMdDocument() {
   return md?.document;
 }
 function post(panel, msg) {
+  log("-> webview", msg.type, "uri" in msg ? msg.uri : "");
   panel.webview.postMessage(msg);
 }
 function readMuyaCss() {
@@ -90,8 +95,11 @@ ${css}
 </html>`;
 }
 var EXT_ROOT = "";
+var activeUri = "";
 function activate(context) {
   EXT_ROOT = context.extensionUri.fsPath;
+  devMode = context.workspaceState.get("devMode", false);
+  log("activate; devMode =", devMode);
   const openCmd = vscode.commands.registerCommand("marktext-editor.open", () => {
     const doc = getMdDocument();
     if (!doc) {
@@ -100,10 +108,24 @@ function activate(context) {
     }
     openEditorForDoc(doc, context);
   });
-  context.subscriptions.push(openCmd);
+  const reloadCmd = vscode.commands.registerCommand("marktext-editor.reloadWebview", () => {
+    if (activePanel) {
+      activePanel.webview.html = buildHtml(activePanel);
+      log("reload requested");
+    } else {
+      vscode.window.showInformationMessage("MarkText: no webview open to reload.");
+    }
+  });
+  const toggleDevCmd = vscode.commands.registerCommand("marktext-editor.toggleDev", async () => {
+    devMode = !devMode;
+    await context.workspaceState.update("devMode", devMode);
+    vscode.window.showInformationMessage(`MarkText dev mode: ${devMode ? "ON" : "OFF"} (reload webview to apply).`);
+  });
+  context.subscriptions.push(openCmd, reloadCmd, toggleDevCmd);
 }
 function openEditorForDoc(doc, context) {
   const uri = doc.uri;
+  activeUri = uri.toString();
   const column = vscode.ViewColumn.Beside;
   if (activePanel) {
     activePanel.reveal(column);
@@ -124,6 +146,7 @@ function openEditorForDoc(doc, context) {
   panel.webview.html = buildHtml(panel);
   let bound = false;
   panel.webview.onDidReceiveMessage((msg) => {
+    log("<- webview", msg.type);
     switch (msg.type) {
       case "ready":
         if (!bound) {
@@ -166,7 +189,7 @@ function bindDocument(panel, uri, context) {
   const doc = getOpenDoc(uri) ?? vscode.workspace.textDocuments.find((d) => d.uri.toString() === uri.toString());
   if (!doc) return;
   const theme = vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.Dark ? "dark" : "light";
-  post(panel, { type: "init", markdown: doc.getText(), theme, uri: uri.toString() });
+  post(panel, { type: "init", markdown: doc.getText(), theme, uri: uri.toString(), dev: devMode });
   const sub = vscode.workspace.onDidChangeTextDocument((e) => {
     if (e.document.uri.toString() !== uri.toString()) return;
     if (applyingFromWebview) return;

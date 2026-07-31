@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>MarkText webview harness</title>
+<style>html,body{margin:0;padding:0;height:100%}#app{height:100%;overflow:auto}</style>
+<link rel="stylesheet" href="./out/webview/main.css" />
+</head>
+<body>
+<div id="app"></div>
+<script>
+  // Stub the VS Code API so the webview bundle can run standalone.
+  window.acquireVsCodeApi = function () {
+    return {
+      postMessage: function (msg) { window.__lastMsg = msg; console.log('[webview->host]', JSON.stringify(msg).slice(0,120)); },
+      getState: function () { return {}; },
+      setState: function () {},
+    };
+  };
+  window.addEventListener('DOMContentLoaded', function () {
+    // Load the real bundle.
+    var s = document.createElement('script');
+    s.src = './out/webview/main.js';
+    s.onload = function () {
+      // Simulate the host sending 'init' after the webview posts 'ready'.
+      setTimeout(function () {
+        var md = [
+          '# Hello MarkText',
+          '',
+          'This is **bold**, *italic*, and `code`.',
+          '',
+          '- item one',
+          '- item two',
+          '',
+          '> a blockquote',
+          '',
+          '```js',
+          'const x = 1;',
+          '```',
+        ].join('\n');
+        window.dispatchEvent(new MessageEvent('message', { data: { type: 'init', markdown: md, theme: 'light', uri: 'file:///test.md' } }));
+        window.__bootedAt = Date.now();
+      }, 200);
+    };
+    document.body.appendChild(s);
+  });
+</script>
+</body>
+</html>

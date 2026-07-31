@@ -1,0 +1,7 @@
+/* Collect MarkText's editor stylesheets into one bundle. The webview build
+   compiles this to out/webview/main.css, which the host injects into the
+   webview <head> so the WYSIWYG surface is actually styled. */
+@import '/home/ftr/Apps/marktext/packages/muya/src/assets/styles/blockSyntax.css';
+@import '/home/ftr/Apps/marktext/packages/muya/src/assets/styles/index.css';
+@import '/home/ftr/Apps/marktext/packages/muya/src/assets/styles/inlineSyntax.css';
+@import '/home/ftr/Apps/marktext/packages/muya/src/assets/styles/prismjs/light.theme.css';

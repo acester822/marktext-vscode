@@ -14,7 +14,7 @@
     "types": ["vscode", "node"],
     "baseUrl": ".",
     "paths": {
-      "muya-core": ["/home/ftr/Apps/marktext/packages/muya/lib/es/index.js"]
+      "@muyajs/core": ["/home/ftr/Apps/marktext/packages/muya/lib/types/index.d.ts"]
     }
   },
   "include": ["src", "webview/src"]

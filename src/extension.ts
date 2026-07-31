@@ -16,7 +16,7 @@ type FromWebview = ReadyMsg | ChangeMsg | OpenExternalMsg | RequestImageMsg;
 
 let activePanel: vscode.WebviewPanel | undefined;
 // Set while the host applies a webview-originated change to the document,
-// so we don't echo it back to the webview (which would reset the caret).
+// so the resulting onDidChangeTextDocument event is NOT echoed back.
 let applyingFromWebview = false;
 
 function getNonce(): string {
@@ -29,7 +29,6 @@ function getNonce(): string {
 function getMdDocument(): vscode.TextDocument | undefined {
   const editor = vscode.window.activeTextEditor;
   if (editor && editor.document.languageId === 'markdown') return editor.document;
-  // fall back: pick the first visible markdown editor
   const md = vscode.window.visibleTextEditors.find(e => e.document.languageId === 'markdown');
   return md?.document;
 }
@@ -38,22 +37,37 @@ function post(panel: vscode.WebviewPanel, msg: ToWebview) {
   panel.webview.postMessage(msg);
 }
 
+function readMuyaCss(): string {
+  // Produced by the webview build (esbuild --loader:.css=css collects muya's
+  // imported stylesheets into a single file).
+  const cssPath = path.join(EXT_ROOT, 'out', 'webview', 'main.css');
+  try {
+    return fs.readFileSync(cssPath, 'utf8');
+  } catch {
+    return '';
+  }
+}
+
 function buildHtml(panel: vscode.WebviewPanel): string {
   const scriptUri = panel.webview.asWebviewUri(vscode.Uri.file(
     path.join(EXT_ROOT, 'out', 'webview', 'main.js')));
   const nonce = getNonce();
-  // main.js is a self-contained IIFE bundle (muya + UI + message protocol),
-  // with all assets inlined as data URLs — no import map or runtime file loads.
+  const css = readMuyaCss();
+  // main.js is a self-contained IIFE (muya + UI + message protocol); the editor
+  // CSS is injected here so the WYSIWYG surface is actually styled.
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>MarkText</title>
-<style>
+<style nonce="${nonce}">
   html, body { margin: 0; padding: 0; height: 100%; background: transparent; }
   #app { height: 100%; overflow: auto; }
   #app .mu-editor, #app .mu-content-container { min-height: 100%; }
+</style>
+<style nonce="${nonce}">
+${css}
 </style>
 </head>
 <body>
@@ -86,7 +100,7 @@ function openEditorForDoc(doc: vscode.TextDocument, context: vscode.ExtensionCon
 
   if (activePanel) {
     activePanel.reveal(column);
-    // rebind to the newly requested doc
+    // Rebind to the newly requested doc without recreating the panel.
     bindDocument(activePanel, uri, context);
     return;
   }
@@ -104,14 +118,17 @@ function openEditorForDoc(doc: vscode.TextDocument, context: vscode.ExtensionCon
   activePanel = panel;
   panel.webview.html = buildHtml(panel);
 
-  // pending image-pick promises awaiting host response
-  const pendingImages = new Map<number, (p: string | null) => void>();
-  let reqSeq = 0;
+  // `ready` is posted by the webview once per boot. We only bind on the first
+  // one to avoid double-initialising (which would mount two Muya instances).
+  let bound = false;
 
   panel.webview.onDidReceiveMessage((msg: FromWebview) => {
     switch (msg.type) {
       case 'ready':
-        bindDocument(panel, uri, context);
+        if (!bound) {
+          bound = true;
+          bindDocument(panel, uri, context);
+        }
         break;
       case 'change':
         applyChangeToDocument(uri, msg.markdown);
@@ -139,10 +156,8 @@ function openEditorForDoc(doc: vscode.TextDocument, context: vscode.ExtensionCon
 
   panel.onDidDispose(() => {
     activePanel = undefined;
-    pendingImages.clear();
   }, null, context.subscriptions);
 
-  // keep a reference so it isn't collected
   context.subscriptions.push(panel);
 }
 
@@ -152,15 +167,15 @@ function bindDocument(panel: vscode.WebviewPanel, uri: vscode.Uri, context: vsco
   const theme = vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.Dark ? 'dark' : 'light';
   post(panel, { type: 'init', markdown: doc.getText(), theme, uri: uri.toString() });
 
-  // forward external edits (user typing in the text editor, or another source)
+  // Forward external edits (typing in the text editor, or another source).
+  // Guarded so we never echo the webview's own writes back to it.
   const sub = vscode.workspace.onDidChangeTextDocument((e) => {
     if (e.document.uri.toString() !== uri.toString()) return;
-    if (applyingFromWebview) return; // don't echo our own change back
+    if (applyingFromWebview) return;
     post(panel, { type: 'setMarkdown', markdown: e.document.getText() });
   });
   context.subscriptions.push(sub);
 
-  // react to theme changes
   const themeSub = vscode.window.onDidChangeActiveColorTheme((t) => {
     const kind = t.kind === vscode.ColorThemeKind.Dark ? 'dark' : 'light';
     post(panel, { type: 'theme', theme: kind });
@@ -175,12 +190,15 @@ function getOpenDoc(uri: vscode.Uri): vscode.TextDocument | undefined {
 function applyChangeToDocument(uri: vscode.Uri, markdown: string) {
   const doc = getOpenDoc(uri);
   if (!doc) return;
+  // No-op when the document already holds this text — this is the key guard
+  // that prevents the webview<->host sync echo loop (and the resulting hang).
+  if (doc.getText() === markdown) return;
   applyingFromWebview = true;
   const edit = new vscode.WorkspaceEdit();
   edit.replace(uri, new vscode.Range(0, 0, doc.lineCount, 0), markdown);
-  vscode.workspace.applyEdit(edit).then((applied) => {
-    // release the guard on the next tick so the resulting change event is skipped
-    setTimeout(() => { applyingFromWebview = false; }, 0);
+  vscode.workspace.applyEdit(edit).then(() => {
+    // Release the guard shortly after the document change event has been seen.
+    setTimeout(() => { applyingFromWebview = false; }, 60);
   });
 }
 

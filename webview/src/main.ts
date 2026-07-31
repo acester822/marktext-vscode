@@ -1,6 +1,7 @@
 // MarkText VS Code webview entry.
-// Loads MarkText's @muyajs/core (muya) engine — prebuilt bundle, mapped via
-// import map to the bare specifier 'muya-core' (declared --external in esbuild).
+// Loads MarkText's @muyajs/core (muya) engine — bundled into this IIFE by the
+// build step (with all assets inlined and CSS collected to a sidecar file the
+// host injects into the page head).
 import {
   Muya,
   EmojiSelector,
@@ -21,13 +22,8 @@ import {
   TableRowColumMenu,
   en,
   zhCN,
-} from 'muya-core';
-import type { IMuyaOptions, ILocale } from 'muya-core';
-
-// muya-core/lib/muya (where IMuyaPluginConstructor is declared) is not
-// reachable through the package export map for type resolution, so declare a
-// minimal structural type for the cast used by Muya.use().
-type MuyaPlugin = { pluginName: string; new (muya: unknown, options?: Record<string, unknown>): unknown };
+} from '@muyajs/core';
+import type { IMuyaOptions, ILocale } from '@muyajs/core';
 
 // ---------- host <-> webview message protocol ----------
 type InitMsg = { type: 'init'; markdown: string; theme: 'light' | 'dark'; uri: string };
@@ -66,9 +62,12 @@ async function imageAction(): Promise<string> {
   return '';
 }
 
+// muya-core/lib/muya (where IMuyaPluginConstructor is declared) is not
+// reachable through the package export map for type resolution, so declare a
+// minimal structural type for the cast used by Muya.use().
+type MuyaPlugin = { pluginName: string; new (muya: unknown, options?: Record<string, unknown>): unknown };
+
 // ---------- register muya UI plugins (once, global) ----------
-// Some plugin classes omit the `pluginName` static in their declarations, so
-// cast to IMuyaPluginConstructor for the register call.
 const use = (plugin: unknown, options?: Record<string, unknown>) =>
   Muya.use(plugin as MuyaPlugin, options);
 
@@ -100,6 +99,7 @@ const LOCALES: Record<string, ILocale> = { en, 'zh-CN': zhCN };
 const container = document.getElementById('app') as HTMLElement;
 let muya: Muya | null = null;
 let currentUri = '';
+let booted = false;
 let changeTimer: number | undefined;
 
 function debounceChange() {
@@ -112,10 +112,11 @@ function debounceChange() {
 }
 
 function boot(markdown: string, theme: 'light' | 'dark', uri: string) {
+  if (booted) return;
+  booted = true;
   currentUri = uri;
   const options: Partial<IMuyaOptions> = {
     markdown,
-    // theme is applied via a wrapper class; muya has no `theme` option.
     frontMatter: true,
     footnote: true,
     math: true,
@@ -137,13 +138,16 @@ function boot(markdown: string, theme: 'light' | 'dark', uri: string) {
 
 function setMarkdown(markdown: string) {
   if (!muya) return;
-  muya.setContent(markdown, true);
+  // Replace the whole document; do NOT autofocus (which would steal/reset the
+  // caret on every external edit). The user's caret is preserved.
+  muya.setContent(markdown, false);
 }
 
 function applyTheme(theme: 'light' | 'dark') {
   if (!muya) return;
   const md = muya.getMarkdown();
   muya.destroy();
+  booted = false;
   boot(md, theme, currentUri);
 }
 
@@ -166,4 +170,6 @@ window.addEventListener('message', (ev: MessageEvent) => {
   }
 });
 
+// Signal readiness once. The host replies with a single `init`, which boots the
+// editor exactly once (guarded by `booted`).
 post({ type: 'ready' });

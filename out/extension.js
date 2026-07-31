@@ -36,6 +36,7 @@ __export(extension_exports, {
 module.exports = __toCommonJS(extension_exports);
 var vscode = __toESM(require("vscode"));
 var path = __toESM(require("path"));
+var fs = __toESM(require("fs"));
 var activePanel;
 var applyingFromWebview = false;
 function getNonce() {
@@ -53,21 +54,33 @@ function getMdDocument() {
 function post(panel, msg) {
   panel.webview.postMessage(msg);
 }
+function readMuyaCss() {
+  const cssPath = path.join(EXT_ROOT, "out", "webview", "main.css");
+  try {
+    return fs.readFileSync(cssPath, "utf8");
+  } catch {
+    return "";
+  }
+}
 function buildHtml(panel) {
   const scriptUri = panel.webview.asWebviewUri(vscode.Uri.file(
     path.join(EXT_ROOT, "out", "webview", "main.js")
   ));
   const nonce = getNonce();
+  const css = readMuyaCss();
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>MarkText</title>
-<style>
+<style nonce="${nonce}">
   html, body { margin: 0; padding: 0; height: 100%; background: transparent; }
   #app { height: 100%; overflow: auto; }
   #app .mu-editor, #app .mu-content-container { min-height: 100%; }
+</style>
+<style nonce="${nonce}">
+${css}
 </style>
 </head>
 <body>
@@ -109,12 +122,14 @@ function openEditorForDoc(doc, context) {
   );
   activePanel = panel;
   panel.webview.html = buildHtml(panel);
-  const pendingImages = /* @__PURE__ */ new Map();
-  let reqSeq = 0;
+  let bound = false;
   panel.webview.onDidReceiveMessage((msg) => {
     switch (msg.type) {
       case "ready":
-        bindDocument(panel, uri, context);
+        if (!bound) {
+          bound = true;
+          bindDocument(panel, uri, context);
+        }
         break;
       case "change":
         applyChangeToDocument(uri, msg.markdown);
@@ -144,7 +159,6 @@ function openEditorForDoc(doc, context) {
   });
   panel.onDidDispose(() => {
     activePanel = void 0;
-    pendingImages.clear();
   }, null, context.subscriptions);
   context.subscriptions.push(panel);
 }
@@ -171,13 +185,14 @@ function getOpenDoc(uri) {
 function applyChangeToDocument(uri, markdown) {
   const doc = getOpenDoc(uri);
   if (!doc) return;
+  if (doc.getText() === markdown) return;
   applyingFromWebview = true;
   const edit = new vscode.WorkspaceEdit();
   edit.replace(uri, new vscode.Range(0, 0, doc.lineCount, 0), markdown);
-  vscode.workspace.applyEdit(edit).then((applied) => {
+  vscode.workspace.applyEdit(edit).then(() => {
     setTimeout(() => {
       applyingFromWebview = false;
-    }, 0);
+    }, 60);
   });
 }
 function deactivate() {

@@ -19,6 +19,7 @@ marktext-vscode (this extension)
 ```
 
 ### Why bundling instead of the npm package
+
 MarkText is an Electron app. Its editor engine, `@muyajs/core` (`packages/muya`),
 is a framework-free browser engine (contenteditable + snabbdom VDOM, no Electron
 imports). That is the embeddable piece. The full Electron shell is **not** used.
@@ -31,6 +32,7 @@ through esbuild** with asset loaders that inline every `.png/.svg/.woff/.woff2/
 no runtime file loads — verified to execute in jsdom.
 
 ### Message protocol (host <-> webview)
+
 - `host -> webview`: `init { markdown, theme, uri }`, `setMarkdown { markdown }`,
   `theme { theme }`, `workspaceImage { requestId, path }`
 - `webview -> host`: `ready`, `change { markdown }`, `openExternal { href }`,
@@ -42,6 +44,7 @@ edits to the document (typing in the text editor) are forwarded back into the
 webview via `setMarkdown`. A guard (`applyingFromWebview`) prevents echo loops.
 
 ## Build
+
 ```
 # from /home/ftr/Apps/marktext, build the engine first (once):
 pnpm -C packages/muya build      # emits packages/muya/lib/{es,umd,cjs,types}
@@ -56,11 +59,13 @@ npx vsce package --allow-missing-repository
 declarations so `tsc` checks the webview against the engine's real API.
 
 ## Usage
+
 Open a `.md` file, then run **MarkText: Open WYSIWYG Editor** (editor title bar
 or explorer context menu). Edits sync both ways. Image insertion opens a native
 file dialog (host side) because the webview has no filesystem access.
 
 ## Known limitations (scaffold, not production)
+
 - One panel at a time (`activePanel`); reopening rebinds to the newly active doc.
 - Theme switching destroys + reboots the editor (acceptable for now; `setOptions`
   could do a softer switch once verified).

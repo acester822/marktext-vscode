@@ -52,7 +52,7 @@
     "build:host": "esbuild src/extension.ts --bundle --platform=node --external:vscode --format=cjs --outfile=out/extension.js --sourcemap",
     "build:web": "esbuild webview/src/muya-styles.css --bundle --loader:.css=css --loader:.woff=dataurl --loader:.woff2=dataurl --loader:.ttf=dataurl --loader:.svg=dataurl --loader:.png=dataurl --outfile=out/webview/main.css --define:process.env.NODE_ENV='\"production\"' && esbuild webview/src/main.ts --bundle --format=iife --outfile=out/webview/main.js --sourcemap --alias:@muyajs/core=/home/ftr/Apps/marktext/packages/muya/lib/es/index.js --loader:.png=dataurl --loader:.svg=dataurl --loader:.woff=dataurl --loader:.woff2=dataurl --loader:.ttf=dataurl --loader:.css=empty --define:process.env.NODE_ENV='\"production\"'",
     "build": "npm run build:host && npm run build:web",
-    "watch": "npm run build:host -- --watch & npm run build:web -- --watch & wait",
+    "watch": "npm run build:host -- --watch=forever & npm run build:web -- --watch=forever & wait",
     "dev": "npm run watch",
     "vscode:prepublish": "npm run build"
   },

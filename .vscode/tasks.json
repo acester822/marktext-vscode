@@ -16,7 +16,20 @@
       "script": "watch",
       "label": "npm: watch",
       "isBackground": true,
-      "problemMatcher": [],
+      "problemMatcher": {
+        "owner": "esbuild",
+        "fileLocation": "relative",
+        "pattern": {
+          "regexp": "^(ERROR|WARNING): (.+)$",
+          "severity": 1,
+          "file": 2
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^(.*)$",
+          "endsPattern": "Done in \\d+ms"
+        }
+      },
       "group": "none"
     }
   ]

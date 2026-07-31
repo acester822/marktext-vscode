@@ -24,32 +24,6 @@
         "${workspaceFolder}/out/**/*.js"
       ],
       "preLaunchTask": "npm: watch"
-    },
-    {
-      "name": "Attach to Webview",
-      "type": "vscode-webview",
-      "request": "attach",
-      "webviewId": "marktextEditor",
-      "outFiles": [
-        "${workspaceFolder}/out/webview/main.js"
-      ]
-    }
-  ],
-  "compounds": [
-    {
-      "name": "Run Extension + Webview",
-      "configurations": [
-        "Run Extension",
-        "Attach to Webview"
-      ],
-      "preLaunchTask": "npm: build"
-    },
-    {
-      "name": "Run Extension (Dev) + Webview",
-      "configurations": [
-        "Run Extension (Dev / watch)",
-        "Attach to Webview"
-      ]
     }
   ]
 }

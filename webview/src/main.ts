@@ -154,6 +154,79 @@ function applyTheme(theme: 'light' | 'dark') {
   boot(md, theme, currentUri);
 }
 
+// ---------- custom right-click menu ----------
+// muya (the engine we bundle) does not ship MarkText's rich context menu, so
+// we register our own. It offers the actions the engine actually exposes:
+// undo/redo (real muya API) plus the standard edit operations.
+function setupContextMenu() {
+  const menu = document.createElement('div');
+  menu.className = 'mtx-context-menu';
+  menu.style.cssText = [
+    'position:fixed', 'z-index:99999', 'display:none',
+    'min-width:160px', 'padding:4px 0', 'border-radius:6px',
+    'background:#fff', 'color:#24292e', 'box-shadow:0 2px 12px rgba(0,0,0,.18)',
+    'font:13px sans-serif', 'user-select:none',
+  ].join(';');
+  document.body.appendChild(menu);
+
+  type Item = { label: string; action: () => void; sep?: boolean };
+  const items: Item[] = [
+    { label: 'Undo', action: () => muya?.undo() },
+    { label: 'Redo', action: () => muya?.redo() },
+    { label: 'Cut', action: () => document.execCommand('cut'), sep: true },
+    { label: 'Copy', action: () => document.execCommand('copy') },
+    { label: 'Paste', action: () => document.execCommand('paste') },
+    { label: 'Select All', action: () => document.execCommand('selectAll'), sep: true },
+  ];
+
+  function render() {
+    menu.innerHTML = '';
+    for (const it of items) {
+      if (it.sep) {
+        const hr = document.createElement('div');
+        hr.style.cssText = 'height:1px;margin:4px 0;background:#e1e4e8';
+        menu.appendChild(hr);
+        continue;
+      }
+      const el = document.createElement('div');
+      el.textContent = it.label;
+      el.style.cssText = 'padding:6px 16px;cursor:pointer';
+      el.addEventListener('mouseenter', () => { el.style.background = '#f0f3f6'; });
+      el.addEventListener('mouseleave', () => { el.style.background = 'transparent'; });
+      el.addEventListener('mousedown', (e) => {
+        e.preventDefault(); // keep the editor selection intact
+        it.action();
+        hide();
+      });
+      menu.appendChild(el);
+    }
+  }
+  render();
+
+  function show(x: number, y: number) {
+    menu.style.display = 'block';
+    const rect = menu.getBoundingClientRect();
+    const px = Math.min(x, window.innerWidth - rect.width - 4);
+    const py = Math.min(y, window.innerHeight - rect.height - 4);
+    menu.style.left = `${px}px`;
+    menu.style.top = `${py}px`;
+  }
+  function hide() {
+    menu.style.display = 'none';
+  }
+
+  // Attach on document (capture) so it fires regardless of where the editor
+  // mounts its nodes; the container reference is only used for the editor.
+  document.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    show(e.clientX, e.clientY);
+  }, true);
+  window.addEventListener('click', hide);
+  window.addEventListener('scroll', hide, true);
+}
+
+setupContextMenu();
+
 window.addEventListener('message', (ev: MessageEvent) => {
   const msg = ev.data as ToWebview;
   if (dev) console.log('[marktext-webview <- host]', msg.type);

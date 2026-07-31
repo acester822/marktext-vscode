@@ -38,7 +38,7 @@ var vscode = __toESM(require("vscode"));
 var path = __toESM(require("path"));
 var fs = __toESM(require("fs"));
 var activePanel;
-var applyingFromWebview = false;
+var lastSentMarkdown = "";
 var devMode = false;
 var log = (...args) => {
   if (devMode) console.log("[marktext]", ...args);
@@ -192,8 +192,9 @@ function bindDocument(panel, uri, context) {
   post(panel, { type: "init", markdown: doc.getText(), theme, uri: uri.toString(), dev: devMode });
   const sub = vscode.workspace.onDidChangeTextDocument((e) => {
     if (e.document.uri.toString() !== uri.toString()) return;
-    if (applyingFromWebview) return;
-    post(panel, { type: "setMarkdown", markdown: e.document.getText() });
+    const text = e.document.getText();
+    if (text === lastSentMarkdown) return;
+    post(panel, { type: "setMarkdown", markdown: text });
   });
   context.subscriptions.push(sub);
   const themeSub = vscode.window.onDidChangeActiveColorTheme((t) => {
@@ -209,14 +210,10 @@ function applyChangeToDocument(uri, markdown) {
   const doc = getOpenDoc(uri);
   if (!doc) return;
   if (doc.getText() === markdown) return;
-  applyingFromWebview = true;
+  lastSentMarkdown = markdown;
   const edit = new vscode.WorkspaceEdit();
   edit.replace(uri, new vscode.Range(0, 0, doc.lineCount, 0), markdown);
-  vscode.workspace.applyEdit(edit).then(() => {
-    setTimeout(() => {
-      applyingFromWebview = false;
-    }, 60);
-  });
+  vscode.workspace.applyEdit(edit);
 }
 function deactivate() {
   activePanel?.dispose();

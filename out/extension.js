@@ -38,7 +38,7 @@ var vscode = __toESM(require("vscode"));
 var path = __toESM(require("path"));
 var fs = __toESM(require("fs"));
 var activePanel;
-var applyingFromWebview = false;
+var lastSyncedMarkdown = "";
 var devMode = false;
 var log = (...args) => {
   if (devMode) console.log("[marktext]", ...args);
@@ -156,6 +156,7 @@ function openEditorForDoc(doc, context) {
         }
         break;
       case "change":
+        lastSyncedMarkdown = msg.markdown;
         applyChangeToDocument(uri, msg.markdown);
         break;
       case "openExternal":
@@ -189,17 +190,19 @@ function openEditorForDoc(doc, context) {
 function bindDocument(panel, uri, context) {
   const doc = getOpenDoc(uri) ?? vscode.workspace.textDocuments.find((d) => d.uri.toString() === uri.toString());
   if (!doc) return;
+  lastSyncedMarkdown = "";
   const theme = vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.Dark ? "dark" : "light";
   post(panel, { type: "init", markdown: doc.getText(), theme, uri: uri.toString(), dev: devMode });
   const sub = vscode.workspace.onDidChangeTextDocument((e) => {
     if (e.document.uri.toString() !== uri.toString()) return;
-    if (applyingFromWebview) {
-      console.log("[marktext-host] change event is OURS (skip echo)");
-      applyingFromWebview = false;
+    const text = e.document.getText();
+    if (text === lastSyncedMarkdown) {
+      console.log("[marktext-host] change matches synced state (skip echo)");
       return;
     }
-    console.log("[marktext-host] external change -> post setMarkdown to webview (len " + e.document.getText().length + ")");
-    post(panel, { type: "setMarkdown", markdown: e.document.getText() });
+    console.log("[marktext-host] external change -> post setMarkdown to webview (len " + text.length + ")");
+    lastSyncedMarkdown = text;
+    post(panel, { type: "setMarkdown", markdown: text });
   });
   context.subscriptions.push(sub);
   const themeSub = vscode.window.onDidChangeActiveColorTheme((t) => {
@@ -215,7 +218,6 @@ function applyChangeToDocument(uri, markdown) {
   const doc = getOpenDoc(uri);
   if (!doc) return;
   if (doc.getText() === markdown) return;
-  applyingFromWebview = true;
   const edit = new vscode.WorkspaceEdit();
   edit.replace(uri, new vscode.Range(0, 0, doc.lineCount, 0), markdown);
   vscode.workspace.applyEdit(edit);

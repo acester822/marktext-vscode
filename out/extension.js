@@ -147,6 +147,7 @@ function openEditorForDoc(doc, context) {
   let bound = false;
   panel.webview.onDidReceiveMessage((msg) => {
     log("<- webview", msg.type);
+    if (msg.type === "change") console.log("[marktext-host] change from webview (len " + msg.markdown.length + ")");
     switch (msg.type) {
       case "ready":
         if (!bound) {
@@ -193,9 +194,11 @@ function bindDocument(panel, uri, context) {
   const sub = vscode.workspace.onDidChangeTextDocument((e) => {
     if (e.document.uri.toString() !== uri.toString()) return;
     if (applyingFromWebview) {
+      console.log("[marktext-host] change event is OURS (skip echo)");
       applyingFromWebview = false;
       return;
     }
+    console.log("[marktext-host] external change -> post setMarkdown to webview (len " + e.document.getText().length + ")");
     post(panel, { type: "setMarkdown", markdown: e.document.getText() });
   });
   context.subscriptions.push(sub);
@@ -215,9 +218,7 @@ function applyChangeToDocument(uri, markdown) {
   applyingFromWebview = true;
   const edit = new vscode.WorkspaceEdit();
   edit.replace(uri, new vscode.Range(0, 0, doc.lineCount, 0), markdown);
-  vscode.workspace.applyEdit(edit).then(() => {
-    applyingFromWebview = false;
-  });
+  vscode.workspace.applyEdit(edit);
 }
 function deactivate() {
   activePanel?.dispose();

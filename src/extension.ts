@@ -156,6 +156,9 @@ function openEditorForDoc(doc: vscode.TextDocument, context: vscode.ExtensionCon
 
   panel.webview.onDidReceiveMessage((msg: FromWebview) => {
     log('<- webview', msg.type);
+    // Host-side trace (Extension Host console) of the sync flow, so a broken
+    // round-trip is visible even with dev mode off.
+    if (msg.type === 'change') console.log('[marktext-host] change from webview (len ' + msg.markdown.length + ')');
     switch (msg.type) {
       case 'ready':
         if (!bound) {
@@ -207,7 +210,12 @@ function bindDocument(panel: vscode.WebviewPanel, uri: vscode.Uri, context: vsco
   // them here — that prevents the setContent round-trip that resets the caret.
   const sub = vscode.workspace.onDidChangeTextDocument((e) => {
     if (e.document.uri.toString() !== uri.toString()) return;
-    if (applyingFromWebview) { applyingFromWebview = false; return; }
+    if (applyingFromWebview) {
+      console.log('[marktext-host] change event is OURS (skip echo)');
+      applyingFromWebview = false;
+      return;
+    }
+    console.log('[marktext-host] external change -> post setMarkdown to webview (len ' + e.document.getText().length + ')');
     post(panel, { type: 'setMarkdown', markdown: e.document.getText() });
   });
   context.subscriptions.push(sub);
@@ -229,13 +237,14 @@ function applyChangeToDocument(uri: vscode.Uri, markdown: string) {
   // No-op when the document already holds this text — prevents an echo loop.
   if (doc.getText() === markdown) return;
   // Mark this applyEdit as ours so the change handler does NOT bounce it back
-  // to the webview (which would reset the caret + wipe undo history). Cleared
-  // in the handler; the .then() is a belt-and-suspenders reset if no event
-  // fires (e.g. the edit was a no-op or failed).
+  // to the webview (which would reset the caret + wipe undo history). The
+  // handler clears the flag synchronously when our own change event arrives.
+  // Defensive: reset any stale flag first so a previous stuck flag can't
+  // silently suppress a legitimate external edit.
   applyingFromWebview = true;
   const edit = new vscode.WorkspaceEdit();
   edit.replace(uri, new vscode.Range(0, 0, doc.lineCount, 0), markdown);
-  vscode.workspace.applyEdit(edit).then(() => { applyingFromWebview = false; });
+  vscode.workspace.applyEdit(edit);
 }
 
 export function deactivate() {

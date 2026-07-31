@@ -41,6 +41,12 @@ type FromWebview =
 const vscode = (window as any).acquireVsCodeApi ? (window as any).acquireVsCodeApi() : null;
 let dev = false;
 
+// Always-on build marker so we can confirm which bundle is actually running
+// in the webview (guards against a stale/cached build after reinstall).
+const BUILD_ID = '2026-07-31c';
+// eslint-disable-next-line no-console
+console.log(`[marktext-webview] build ${BUILD_ID} loaded`);
+
 function post(msg: FromWebview) {
   if (dev) console.log('[marktext-webview -> host]', msg.type);
   vscode?.postMessage(msg);
@@ -117,6 +123,8 @@ function debounceChange() {
     // This change came from an external edit we just applied; don't echo it.
     if (applyingExternal) { applyingExternal = false; return; }
     const md = muya.getMarkdown();
+    // Always log keystroke activity so a silent console is diagnosable.
+    console.log('[marktext-webview] change -> post (len ' + md.length + ')');
     post({ type: 'change', markdown: md });
   }, 300);
 }
@@ -378,9 +386,13 @@ window.addEventListener('message', (ev: MessageEvent) => {
   switch (msg.type) {
     case 'init':
       dev = !!msg.dev;
+      console.log('[marktext-webview] init received (dev=' + dev + ')');
       boot(msg.markdown, msg.theme, msg.uri);
       break;
     case 'setMarkdown':
+      // Log every setMarkdown we receive — if the cursor resets, this line
+      // tells us the host is STILL bouncing our own edit back.
+      console.log('[marktext-webview] setMarkdown received (len ' + msg.markdown.length + ', external=' + applyingExternal + ')');
       setMarkdown(msg.markdown);
       break;
     case 'theme':

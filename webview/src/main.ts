@@ -148,6 +148,7 @@ function boot(markdown: string, theme: 'light' | 'dark', uri: string) {
   };
   if (dev) console.log('[marktext-webview] booting muya for', uri);
   muya = new Muya(container, options);
+  (window as any).__muya = muya; // debug handle for introspecting the API
   muya.locale(LOCALES['en']);
   muya.init();
   muya.on('json-change', debounceChange);
@@ -202,6 +203,50 @@ async function pastePlain() {
   document.execCommand('insertText', false, text);
 }
 
+// ---------- muya-backed actions (the previously-greyed items) ----------
+// muya DOES expose these transforms publicly; we verified the signatures
+// against the bundled @muyajs/core source (packages/muya/src/muya.ts).
+function formatInline(type: string) { muya?.format(type); }
+function setBlock(type: string) {
+  // Ensure muya has focus/caret before a block transform (right-click already
+  // positioned it via muya's click handler; this is a safety net for programmatic paths).
+  muya?.focus();
+  muya?.updateParagraph(type);
+}
+function selectAllInBlock() {
+  // Place the caret so block transforms act on the focused block.
+  const sel = window.getSelection();
+  if (sel && sel.anchorNode) {
+    const node = sel.anchorNode as HTMLElement;
+    const el = node.nodeType === 3 ? node.parentElement : (node as HTMLElement);
+    if (el && el.getAttribute('contenteditable') !== null) {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  }
+}
+
+// Find: search for the current selection (or word at caret) via muya's search.
+function findSelection() {
+  const sel = window.getSelection();
+  const term = sel ? sel.toString() : '';
+  if (!term || !muya) return;
+  muya.search(term);
+  muya.find('next');
+}
+// Replace: open a prompt for find/replace terms, run muya's search + replace.
+function replacePrompt() {
+  if (!muya) return;
+  const sel = window.getSelection();
+  const find = (sel ? sel.toString() : '') || window.prompt('Find:') || '';
+  if (!find) return;
+  const replace = window.prompt(`Replace "${find}" with:`, '') || '';
+  muya.search(find);
+  muya.replace(replace, { isSingle: false, isRegexp: false });
+}
+
 const MENU: MenuItem[] = [
   // Edit submenu
   { label: 'Edit', submenu: [
@@ -218,50 +263,50 @@ const MENU: MenuItem[] = [
     { label: 'Select All', shortcut: 'Ctrl+A', action: () => document.execCommand('selectAll') },
     { label: 'Duplicate Paragraph', shortcut: 'Ctrl+Alt+P', action: () => muya?.insertParagraph('after') },
     { label: 'New Paragraph', shortcut: 'Ctrl+Shift+N', action: () => muya?.insertParagraph('after') },
-    { label: 'Delete Paragraph', shortcut: 'Ctrl+Shift+D' },
+    { label: 'Delete Paragraph', shortcut: 'Ctrl+Shift+D', action: () => muya?.deleteParagraph() },
     { label: '', sep: true },
-    { label: 'Find', shortcut: 'Ctrl+F' },
-    { label: 'Replace', shortcut: 'Ctrl+R' },
+    { label: 'Find', shortcut: 'Ctrl+F', action: findSelection },
+    { label: 'Replace', shortcut: 'Ctrl+R', action: replacePrompt },
   ]},
   // Paragraph submenu
   { label: 'Paragraph', submenu: [
-    { label: 'Heading 1', shortcut: 'Ctrl+Shift+1' },
-    { label: 'Heading 2', shortcut: 'Ctrl+Shift+2' },
-    { label: 'Heading 3', shortcut: 'Ctrl+Shift+3' },
-    { label: 'Heading 4', shortcut: 'Ctrl+Shift+4' },
-    { label: 'Heading 5', shortcut: 'Ctrl+Shift+5' },
-    { label: 'Heading 6', shortcut: 'Ctrl+Shift+6' },
+    { label: 'Heading 1', shortcut: 'Ctrl+Shift+1', action: () => setBlock('heading 1') },
+    { label: 'Heading 2', shortcut: 'Ctrl+Shift+2', action: () => setBlock('heading 2') },
+    { label: 'Heading 3', shortcut: 'Ctrl+Shift+3', action: () => setBlock('heading 3') },
+    { label: 'Heading 4', shortcut: 'Ctrl+Shift+4', action: () => setBlock('heading 4') },
+    { label: 'Heading 5', shortcut: 'Ctrl+Shift+5', action: () => setBlock('heading 5') },
+    { label: 'Heading 6', shortcut: 'Ctrl+Shift+6', action: () => setBlock('heading 6') },
     { label: '', sep: true },
-    { label: 'Upgrade Heading', shortcut: 'Ctrl+Plus' },
-    { label: 'Degrade Heading', shortcut: 'Ctrl+-' },
+    { label: 'Upgrade Heading', shortcut: 'Ctrl+Plus', action: () => setBlock('upgrade heading') },
+    { label: 'Degrade Heading', shortcut: 'Ctrl+-', action: () => setBlock('degrade heading') },
     { label: '', sep: true },
-    { label: 'Table', shortcut: 'Ctrl+Shift+T' },
-    { label: 'Code Block', shortcut: 'Ctrl+Shift+K' },
-    { label: 'Quote Block', shortcut: 'Ctrl+Shift+Q' },
-    { label: 'Math Block', shortcut: 'Ctrl+Alt+N' },
-    { label: 'HTML Block', shortcut: 'Ctrl+Alt+H' },
-    { label: 'Ordered List', shortcut: 'Ctrl+G' },
-    { label: 'Bullet List', shortcut: 'Ctrl+H' },
-    { label: 'Task List', shortcut: 'Ctrl+Alt+X' },
+    { label: 'Table', shortcut: 'Ctrl+Shift+T', action: () => muya?.createTable({ rows: 3, columns: 3 }) },
+    { label: 'Code Block', shortcut: 'Ctrl+Shift+K', action: () => setBlock('pre') },
+    { label: 'Quote Block', shortcut: 'Ctrl+Shift+Q', action: () => setBlock('blockquote') },
+    { label: 'Math Block', shortcut: 'Ctrl+Alt+N', action: () => setBlock('mathblock') },
+    { label: 'HTML Block', shortcut: 'Ctrl+Alt+H', action: () => setBlock('html') },
+    { label: 'Ordered List', shortcut: 'Ctrl+G', action: () => setBlock('ol-order') },
+    { label: 'Bullet List', shortcut: 'Ctrl+H', action: () => setBlock('ul-bullet') },
+    { label: 'Task List', shortcut: 'Ctrl+Alt+X', action: () => setBlock('ul-task') },
     { label: '', sep: true },
-    { label: 'Paragraph', shortcut: 'Ctrl+Shift+0' },
-    { label: 'Horizontal Line', shortcut: 'Ctrl+Shift+U' },
-    { label: 'Front Matter', shortcut: 'Ctrl+Alt+Y' },
+    { label: 'Paragraph', shortcut: 'Ctrl+Shift+0', action: () => setBlock('reset-to-paragraph') },
+    { label: 'Horizontal Line', shortcut: 'Ctrl+Shift+U', action: () => setBlock('hr') },
+    { label: 'Front Matter', shortcut: 'Ctrl+Alt+Y', action: () => setBlock('front-matter') },
   ]},
   // Format submenu
   { label: 'Format', submenu: [
-    { label: 'Bold', shortcut: 'Ctrl+B' },
-    { label: 'Italic', shortcut: 'Ctrl+I' },
-    { label: 'Underline', shortcut: 'Ctrl+U' },
-    { label: 'Superscript' },
-    { label: 'Subscript' },
-    { label: 'Highlight', shortcut: 'Ctrl+Shift+H' },
-    { label: 'Inline Code', shortcut: 'Ctrl+`' },
-    { label: 'Inline Math', shortcut: 'Ctrl+Shift+M' },
-    { label: 'Strikethrough', shortcut: 'Ctrl+D' },
-    { label: 'Hyperlink', shortcut: 'Ctrl+L' },
-    { label: 'Image', shortcut: 'Ctrl+Shift+I' },
-    { label: 'Clear Format', shortcut: 'Ctrl+Shift+R' },
+    { label: 'Bold', shortcut: 'Ctrl+B', action: () => formatInline('strong') },
+    { label: 'Italic', shortcut: 'Ctrl+I', action: () => formatInline('em') },
+    { label: 'Underline', shortcut: 'Ctrl+U', action: () => formatInline('u') },
+    { label: 'Superscript', action: () => formatInline('sup') },
+    { label: 'Subscript', action: () => formatInline('sub') },
+    { label: 'Highlight', shortcut: 'Ctrl+Shift+H', action: () => formatInline('mark') },
+    { label: 'Inline Code', shortcut: 'Ctrl+`', action: () => formatInline('inline_code') },
+    { label: 'Inline Math', shortcut: 'Ctrl+Shift+M', action: () => formatInline('inline_math') },
+    { label: 'Strikethrough', shortcut: 'Ctrl+D', action: () => formatInline('del') },
+    { label: 'Hyperlink', shortcut: 'Ctrl+L', action: () => formatInline('link') },
+    { label: 'Image', shortcut: 'Ctrl+Shift+I', action: () => muya?.insertImage({ src: '', alt: '' }) },
+    { label: 'Clear Format', shortcut: 'Ctrl+Shift+R', action: () => formatInline('clear') },
   ]},
   { label: '', sep: true },
   { label: 'Undo', shortcut: 'Ctrl+Z', action: () => muya?.undo() },

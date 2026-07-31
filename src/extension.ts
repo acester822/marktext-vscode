@@ -16,16 +16,25 @@ type ToWebview = InitMsg | SetMarkdownMsg | ThemeMsg | WorkspaceImageMsg | Reloa
 type FromWebview = ReadyMsg | ChangeMsg | OpenExternalMsg | RequestImageMsg;
 
 let activePanel: vscode.WebviewPanel | undefined;
-// The markdown text we last synced in EITHER direction (webview -> host, or
-// host -> webview). Used to suppress the echo: when onDidChangeTextDocument
-// fires with text equal to this, it is our own round-trip (not a real edit)
-// and must NOT be bounced back to the webview. Content comparison is exact
-// (both sides are the same string) and survives the MULTIPLE change events a
-// single full-document applyEdit emits — a one-shot boolean flag does not,
-// which is what let the echo through before.
+// Set synchronously just before we applyEdit for a webview-originated change,
+// and cleared on a LATER macrotask (setTimeout 0) — NOT inside the change
+// handler. A single full-document applyEdit fires MULTIPLE onDidChangeText-
+// Document events, all synchronously within the applyEdit call, so a flag
+// cleared inside the handler would miss the 2nd+ events and let the echo
+// through. Keeping the flag true until after the synchronous applyEdit returns
+// suppresses every event of that one edit.
+let applyingFromWebview = false;
+// The markdown text we last synced in EITHER direction. Backstop for any
+// change event that fires AFTER the flag is cleared (async/late): if its text
+// (EOL + trailing-newline normalised) equals this, it is our own round-trip.
 let lastSyncedMarkdown = '';
 // Dev/debug mode: verbose host<->webview logging + verbose webview console.
 let devMode = false;
+
+// Normalise for echo comparison: unify CRLF->LF and ignore trailing newlines,
+// because VS Code's stored text does not byte-match what muya serialises
+// (off-by-one trailing newline / EOL), which otherwise defeats the compare.
+const normText = (s: string) => s.replace(/\r\n/g, '\n').replace(/\n+$/, '');
 
 const log = (...args: unknown[]) => {
   if (devMode) console.log('[marktext]', ...args);
@@ -211,15 +220,20 @@ function bindDocument(panel: vscode.WebviewPanel, uri: vscode.Uri, context: vsco
   post(panel, { type: 'init', markdown: doc.getText(), theme, uri: uri.toString(), dev: devMode });
 
   // Forward external edits (typing in the text editor, or another source) to
-  // the webview. Suppress our OWN echo by exact content: when the change
-  // event's text equals the markdown we last synced, it is the round-trip
-  // from a webview-originated edit (applyEdit emits multiple events, all with
-  // the same text) and must NOT be bounced back — that setContent round-trip
-  // resets the caret and wipes muya's undo history.
+  // the webview. Suppress our OWN echo two ways:
+  //  1) applyingFromWebview flag is true for the entire synchronous applyEdit
+  //     (all of its multiple change events fire within that call), so any
+  //     event while it is true is our echo and is skipped.
+  //  2) as a backstop for any late/async event, if the event text (EOL +
+  //     trailing-newline normalised) equals lastSyncedMarkdown, skip it.
   const sub = vscode.workspace.onDidChangeTextDocument((e) => {
     if (e.document.uri.toString() !== uri.toString()) return;
+    if (applyingFromWebview) {
+      console.log('[marktext-host] change during our applyEdit (skip echo)');
+      return;
+    }
     const text = e.document.getText();
-    if (text === lastSyncedMarkdown) {
+    if (normText(text) === normText(lastSyncedMarkdown)) {
       console.log('[marktext-host] change matches synced state (skip echo)');
       return;
     }
@@ -245,9 +259,16 @@ function applyChangeToDocument(uri: vscode.Uri, markdown: string) {
   if (!doc) return;
   // No-op when the document already holds this text — prevents an echo loop.
   if (doc.getText() === markdown) return;
+  // Mark that the synchronous applyEdit below is ours; the change events it
+  // emits (multiple, all within the call) are skipped by the handler. Cleared
+  // on a later macrotask so it stays true for the whole synchronous applyEdit
+  // but cannot leak into a subsequent, unrelated external edit.
+  applyingFromWebview = true;
+  lastSyncedMarkdown = markdown;
   const edit = new vscode.WorkspaceEdit();
   edit.replace(uri, new vscode.Range(0, 0, doc.lineCount, 0), markdown);
   vscode.workspace.applyEdit(edit);
+  setTimeout(() => { applyingFromWebview = false; }, 0);
 }
 
 export function deactivate() {

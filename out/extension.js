@@ -38,8 +38,10 @@ var vscode = __toESM(require("vscode"));
 var path = __toESM(require("path"));
 var fs = __toESM(require("fs"));
 var activePanel;
+var applyingFromWebview = false;
 var lastSyncedMarkdown = "";
 var devMode = false;
+var normText = (s) => s.replace(/\r\n/g, "\n").replace(/\n+$/, "");
 var log = (...args) => {
   if (devMode) console.log("[marktext]", ...args);
 };
@@ -195,8 +197,12 @@ function bindDocument(panel, uri, context) {
   post(panel, { type: "init", markdown: doc.getText(), theme, uri: uri.toString(), dev: devMode });
   const sub = vscode.workspace.onDidChangeTextDocument((e) => {
     if (e.document.uri.toString() !== uri.toString()) return;
+    if (applyingFromWebview) {
+      console.log("[marktext-host] change during our applyEdit (skip echo)");
+      return;
+    }
     const text = e.document.getText();
-    if (text === lastSyncedMarkdown) {
+    if (normText(text) === normText(lastSyncedMarkdown)) {
       console.log("[marktext-host] change matches synced state (skip echo)");
       return;
     }
@@ -218,9 +224,14 @@ function applyChangeToDocument(uri, markdown) {
   const doc = getOpenDoc(uri);
   if (!doc) return;
   if (doc.getText() === markdown) return;
+  applyingFromWebview = true;
+  lastSyncedMarkdown = markdown;
   const edit = new vscode.WorkspaceEdit();
   edit.replace(uri, new vscode.Range(0, 0, doc.lineCount, 0), markdown);
   vscode.workspace.applyEdit(edit);
+  setTimeout(() => {
+    applyingFromWebview = false;
+  }, 0);
 }
 function deactivate() {
   activePanel?.dispose();

@@ -1,0 +1,54 @@
+{
+  "name": "marktext-vscode",
+  "displayName": "MarkText Editor",
+  "description": "WYSIWYG Markdown editor for VS Code, powered by MarkText's @muyajs/core (muya) engine.",
+  "version": "0.1.0",
+  "publisher": "marktext-vscode",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "marktext-editor.open",
+        "title": "MarkText: Open WYSIWYG Editor"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "marktext-editor.open",
+          "when": "resourceExtname == .md",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "marktext-editor.open",
+          "when": "resourceExtname == .md"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vendor:muya": "rm -rf out/webview/muya && mkdir -p out/webview/muya && cp -r /home/ftr/Apps/marktext/packages/muya/lib/. out/webview/muya/",
+    "build:host": "esbuild src/extension.ts --bundle --platform=node --external:vscode --format=cjs --outfile=out/extension.js --sourcemap",
+    "build:web": "esbuild webview/src/main.ts --bundle --format=iife --outfile=out/webview/main.js --sourcemap --loader:.png=dataurl --loader:.svg=dataurl --loader:.woff=dataurl --loader:.woff2=dataurl --loader:.ttf=dataurl --loader:.css=text --define:process.env.NODE_ENV='\"production\"'",
+    "build": "npm run build:host && npm run build:web",
+    "watch": "npm run build:host -- --watch & npm run build:web -- --watch & wait",
+    "vscode:prepublish": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.21.5",
+    "jsdom": "^30.0.1",
+    "typescript": "^5.4.5"
+  }
+}

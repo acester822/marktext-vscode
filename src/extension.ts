@@ -16,15 +16,6 @@ type ToWebview = InitMsg | SetMarkdownMsg | ThemeMsg | WorkspaceImageMsg | Reloa
 type FromWebview = ReadyMsg | ChangeMsg | OpenExternalMsg | RequestImageMsg;
 
 let activePanel: vscode.WebviewPanel | undefined;
-// Set while the host applies a webview-originated change to the document, so
-// the resulting onDidChangeTextDocument event is NOT echoed back to the
-// webview as setMarkdown (which would call muya.setContent() and reset the
-// caret). Cleared INSIDE the change handler (not via a timer, not via a
-// string compare) so it swallows exactly one echo per applyEdit with no
-// flap: a content-equality guard flaps because muya's getMarkdown() output
-// does not byte-match what VS Code stores (trailing newline / CRLF), so the
-// compare fails and the webview's own edit loops back as setContent.
-let applyingFromWebview = false;
 // Dev/debug mode: verbose host<->webview logging + verbose webview console.
 let devMode = false;
 
@@ -202,16 +193,12 @@ function bindDocument(panel: vscode.WebviewPanel, uri: vscode.Uri, context: vsco
   const theme = vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.Dark ? 'dark' : 'light';
   post(panel, { type: 'init', markdown: doc.getText(), theme, uri: uri.toString(), dev: devMode });
 
-  // Forward external edits (typing in the text editor, or another source).
-  // Guarded so we never echo the webview's own writes back to it.
+  // Forward external edits (typing in the text editor, or another source) to
+  // the webview. The webview itself swallows its own echo (it compares against
+  // the markdown it last posted), so no host-side guard is needed here — and
+  // NOT having one avoids accidentally suppressing a legitimate external edit.
   const sub = vscode.workspace.onDidChangeTextDocument((e) => {
     if (e.document.uri.toString() !== uri.toString()) return;
-    // Swallow the single change event produced by our own applyEdit so we
-    // never bounce the webview's edit back to it (which would reset caret).
-    if (applyingFromWebview) {
-      applyingFromWebview = false;
-      return;
-    }
     post(panel, { type: 'setMarkdown', markdown: e.document.getText() });
   });
   context.subscriptions.push(sub);
@@ -232,8 +219,8 @@ function applyChangeToDocument(uri: vscode.Uri, markdown: string) {
   if (!doc) return;
   // No-op when the document already holds this text — prevents an echo loop.
   if (doc.getText() === markdown) return;
-  // Mark that the next change event is ours, so the handler swallows it.
-  applyingFromWebview = true;
+  // The webview swallows its own echo (it compares against the markdown it
+  // last posted), so we just apply the edit; no host-side flag needed.
   const edit = new vscode.WorkspaceEdit();
   edit.replace(uri, new vscode.Range(0, 0, doc.lineCount, 0), markdown);
   vscode.workspace.applyEdit(edit);

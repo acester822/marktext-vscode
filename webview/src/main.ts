@@ -104,12 +104,21 @@ let muya: Muya | null = null;
 let currentUri = '';
 let booted = false;
 let changeTimer: number | undefined;
+// Last markdown the webview posted to the host via `change`. Used to swallow
+// the host's echo: when the host sends the same text back as `setMarkdown`
+// (our own write round-tripping), we must NOT call muya.setContent() — that
+// resets the caret AND clears muya's undo history. The host-side guard cannot
+// compare reliably because VS Code's stored text does not byte-match muya's
+// getMarkdown() output (trailing newline / CRLF), but here both sides come
+// from getMarkdown(), so the compare is exact.
+let lastPostedMarkdown = '';
 
 function debounceChange() {
   if (changeTimer !== undefined) clearTimeout(changeTimer);
   changeTimer = window.setTimeout(() => {
     if (!muya) return;
     const md = muya.getMarkdown();
+    lastPostedMarkdown = md;
     post({ type: 'change', markdown: md });
   }, 300);
 }
@@ -142,6 +151,9 @@ function boot(markdown: string, theme: 'light' | 'dark', uri: string) {
 
 function setMarkdown(markdown: string) {
   if (!muya) return;
+  // Swallow our own echo: if the host is just bouncing back what we posted,
+  // skip setContent entirely (preserves caret + undo history).
+  if (markdown === lastPostedMarkdown) return;
   // Replace the whole document; do NOT autofocus (which would steal/reset the
   // caret on every external edit). The user's caret is preserved.
   muya.setContent(markdown, false);
@@ -255,7 +267,7 @@ const MENU: MenuItem[] = [
   { label: 'Copy', shortcut: 'Ctrl+C', action: () => document.execCommand('copy') },
   { label: 'Paste', shortcut: 'Ctrl+V', action: () => document.execCommand('paste') },
   { label: '', sep: true },
-  { label: 'Copy as Rich Text', shortcut: 'Ctrl+Shift+C', action: copyMarkdown },
+  { label: 'Copy as Markdown', shortcut: 'Ctrl+Shift+C', action: copyMarkdown },
   { label: 'Copy as HTML', action: copyHtml },
   { label: 'Paste as Plain Text', shortcut: 'Ctrl+Shift+V', action: pastePlain },
 ];
@@ -271,13 +283,9 @@ function setupContextMenu() {
   ].join(';');
   document.body.appendChild(menu);
 
-  // Open submenu popovers live in a stack; we keep at most one open at a time.
-  let openSub: HTMLElement | null = null;
-
-  function clearSubs() {
-    if (openSub) { openSub.remove(); openSub = null; }
-  }
-
+  // Open submenu popovers are nested inside their parent row and revealed via
+  // CSS :hover, so the hover region is continuous (moving from parent to sub
+  // never leaves the element). We keep at most one sub open via CSS.
   function makeRow(item: MenuItem): HTMLElement {
     if (item.sep) {
       const hr = document.createElement('div');
@@ -285,16 +293,27 @@ function setupContextMenu() {
       return hr;
     }
     const row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:18px;padding:6px 16px;white-space:nowrap';
+    row.style.cssText = 'position:relative;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:6px 16px;white-space:nowrap';
     const enabled = !!item.action;
     if (!enabled) row.style.opacity = '0.4';
     if (item.submenu) {
+      row.classList.add('mtx-has-sub');
       const lbl = document.createElement('span');
       lbl.textContent = item.label;
       const arrow = document.createElement('span');
       arrow.textContent = '▸';
       arrow.style.cssText = 'margin-left:8px;color:#888';
       row.appendChild(lbl); row.appendChild(arrow);
+      const sub = document.createElement('div');
+      sub.className = 'mtx-context-submenu';
+      sub.style.cssText = [
+        'display:none', 'position:absolute', 'left:100%', 'top:-4px',
+        'min-width:200px', 'padding:4px 0', 'border-radius:6px',
+        'background:#fff', 'color:#24292e',
+        'box-shadow:0 2px 12px rgba(0,0,0,.18)', 'font:13px sans-serif',
+      ].join(';');
+      for (const subItem of item.submenu) sub.appendChild(makeRow(subItem));
+      row.appendChild(sub);
     } else {
       const lbl = document.createElement('span');
       lbl.textContent = item.label;
@@ -308,7 +327,7 @@ function setupContextMenu() {
     }
     if (enabled && !item.submenu) {
       row.style.cursor = 'pointer';
-      row.addEventListener('mouseenter', () => { row.style.background = '#f0f3f6'; clearSubs(); });
+      row.addEventListener('mouseenter', () => { row.style.background = '#f0f3f6'; });
       row.addEventListener('mouseleave', () => { row.style.background = 'transparent'; });
       row.addEventListener('mousedown', (e) => {
         e.preventDefault();
@@ -316,27 +335,16 @@ function setupContextMenu() {
         hide();
       });
     } else if (item.submenu) {
-      const subItems = item.submenu;
-      row.style.cursor = 'default';
-      row.addEventListener('mouseenter', (e) => {
-        clearSubs();
-        const sub = document.createElement('div');
-        sub.className = 'mtx-context-submenu';
-        sub.style.cssText = [
-          'position:fixed', 'z-index:100000', 'min-width:200px', 'padding:4px 0',
-          'border-radius:6px', 'background:#fff', 'color:#24292e',
-          'box-shadow:0 2px 12px rgba(0,0,0,.18)', 'font:13px sans-serif',
-        ].join(';');
-        for (const subItem of subItems) sub.appendChild(makeRow(subItem));
-        document.body.appendChild(sub);
-        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-        sub.style.left = `${r.right - 4}px`;
-        sub.style.top = `${r.top}px`;
-        openSub = sub;
-      });
+      // CSS handles reveal; clicking a parent row with a submenu does nothing.
+      row.addEventListener('mousedown', (e) => e.preventDefault());
     }
     return row;
   }
+
+  // CSS that reveals nested submenus on hover (continuous hover region).
+  const style = document.createElement('style');
+  style.textContent = '.mtx-has-sub:hover > .mtx-context-submenu{display:block !important;}';
+  document.head.appendChild(style);
 
   function render() {
     menu.innerHTML = '';
@@ -345,7 +353,6 @@ function setupContextMenu() {
   render();
 
   function show(x: number, y: number) {
-    clearSubs();
     menu.style.display = 'block';
     const rect = menu.getBoundingClientRect();
     menu.style.left = `${Math.min(x, window.innerWidth - rect.width - 4)}px`;
@@ -353,14 +360,17 @@ function setupContextMenu() {
   }
   function hide() {
     menu.style.display = 'none';
-    clearSubs();
   }
 
   document.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     show(e.clientX, e.clientY);
   }, true);
-  window.addEventListener('click', hide);
+  // Close on any outside interaction. mousedown (not click) so it fires before
+  // a submenu item's own mousedown handler.
+  window.addEventListener('mousedown', (e) => {
+    if (menu.style.display !== 'none' && !menu.contains(e.target as Node)) hide();
+  });
   window.addEventListener('scroll', hide, true);
 }
 

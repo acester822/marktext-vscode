@@ -104,21 +104,19 @@ let muya: Muya | null = null;
 let currentUri = '';
 let booted = false;
 let changeTimer: number | undefined;
-// Last markdown the webview posted to the host via `change`. Used to swallow
-// the host's echo: when the host sends the same text back as `setMarkdown`
-// (our own write round-tripping), we must NOT call muya.setContent() — that
-// resets the caret AND clears muya's undo history. The host-side guard cannot
-// compare reliably because VS Code's stored text does not byte-match muya's
-// getMarkdown() output (trailing newline / CRLF), but here both sides come
-// from getMarkdown(), so the compare is exact.
-let lastPostedMarkdown = '';
+// Set while we apply an EXTERNAL edit (host -> webview, e.g. user typing in
+// the text editor). Prevents the resulting json-change from being posted back
+// to the host, which would create a sync loop. The webview is the single
+// source of truth for its own edits; the host never bounces those back.
+let applyingExternal = false;
 
 function debounceChange() {
   if (changeTimer !== undefined) clearTimeout(changeTimer);
   changeTimer = window.setTimeout(() => {
     if (!muya) return;
+    // This change came from an external edit we just applied; don't echo it.
+    if (applyingExternal) { applyingExternal = false; return; }
     const md = muya.getMarkdown();
-    lastPostedMarkdown = md;
     post({ type: 'change', markdown: md });
   }, 300);
 }
@@ -151,11 +149,9 @@ function boot(markdown: string, theme: 'light' | 'dark', uri: string) {
 
 function setMarkdown(markdown: string) {
   if (!muya) return;
-  // Swallow our own echo: if the host is just bouncing back what we posted,
-  // skip setContent entirely (preserves caret + undo history).
-  if (markdown === lastPostedMarkdown) return;
-  // Replace the whole document; do NOT autofocus (which would steal/reset the
-  // caret on every external edit). The user's caret is preserved.
+  // External edit (host -> webview). Mark it so the resulting json-change is
+  // not posted back. Do NOT autofocus (would steal/reset the caret).
+  applyingExternal = true;
   muya.setContent(markdown, false);
 }
 

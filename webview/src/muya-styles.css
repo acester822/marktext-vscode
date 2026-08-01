@@ -5,3 +5,28 @@
 @import '/home/ftr/Apps/marktext/packages/muya/src/assets/styles/index.css';
 @import '/home/ftr/Apps/marktext/packages/muya/src/assets/styles/inlineSyntax.css';
 @import '/home/ftr/Apps/marktext/packages/muya/src/assets/styles/prismjs/light.theme.css';
+
+/* Floating UI plugin styles. The webview JS bundle is built with
+   `--loader:.css=empty`, so the `import './index.css'` inside each muya UI
+   plugin is discarded. Without these the quick-insert menu (`/`), front menu,
+   toolbars, etc. render as unstyled blocks at the bottom of the document
+   instead of positioned floating popups. */
+@import '/home/ftr/Apps/marktext/packages/muya/src/ui/baseFloat/index.css';
+@import '/home/ftr/Apps/marktext/packages/muya/src/ui/codeBlockLanguageSelector/index.css';
+@import '/home/ftr/Apps/marktext/packages/muya/src/ui/emojiSelector/index.css';
+@import '/home/ftr/Apps/marktext/packages/muya/src/ui/footnoteTool/index.css';
+@import '/home/ftr/Apps/marktext/packages/muya/src/ui/imageEditTool/index.css';
+@import '/home/ftr/Apps/marktext/packages/muya/src/ui/imagePicker/index.css';
+@import '/home/ftr/Apps/marktext/packages/muya/src/ui/imageResizeBar/index.css';
+@import '/home/ftr/Apps/marktext/packages/muya/src/ui/imageToolbar/index.css';
+@import '/home/ftr/Apps/marktext/packages/muya/src/ui/inlineFormatToolbar/index.css';
+@import '/home/ftr/Apps/marktext/packages/muya/src/ui/linkTools/index.css';
+@import '/home/ftr/Apps/marktext/packages/muya/src/ui/paragraphFrontButton/index.css';
+@import '/home/ftr/Apps/marktext/packages/muya/src/ui/paragraphFrontMenu/index.css';
+@import '/home/ftr/Apps/marktext/packages/muya/src/ui/paragraphQuickInsertMenu/index.css';
+@import '/home/ftr/Apps/marktext/packages/muya/src/ui/previewToolBar/index.css';
+@import '/home/ftr/Apps/marktext/packages/muya/src/ui/tableChessboard/index.css';
+@import '/home/ftr/Apps/marktext/packages/muya/src/ui/tableColumnToolbar/index.css';
+@import '/home/ftr/Apps/marktext/packages/muya/src/ui/tableDragBar/index.css';
+@import '/home/ftr/Apps/marktext/packages/muya/src/ui/tableRowColumMenu/index.css';
+@import '/home/ftr/Apps/marktext/packages/muya/src/ui/tooltip/index.css';

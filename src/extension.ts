@@ -89,6 +89,17 @@ function buildHtml(panel: vscode.WebviewPanel): string {
 <style nonce="${nonce}">
 ${css}
 </style>
+<style nonce="${nonce}">
+  /* Must come AFTER the muya bundle: it declares its own :root values for
+     these, and last-wins at equal specificity. Maps muya's floating-UI theme
+     variables onto VS Code's theme colors so the quick-insert (/) menu, front
+     menu and toolbars match the active editor theme. */
+  :root {
+    --float-bg-color: var(--vscode-menu-background, var(--vscode-editorWidget-background, #fff));
+    --float-hover-color: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground, rgba(0,0,0,.06)));
+    --float-shadow: 0 2px 12px rgba(0,0,0,.35);
+  }
+</style>
 </head>
 <body>
 <div id="app"></div>

@@ -43,7 +43,7 @@ let dev = false;
 
 // Always-on build marker so we can confirm which bundle is actually running
 // in the webview (guards against a stale/cached build after reinstall).
-const BUILD_ID = '2026-07-31c';
+const BUILD_ID = '2026-07-31d';
 // eslint-disable-next-line no-console
 console.log(`[marktext-webview] build ${BUILD_ID} loaded`);
 
@@ -324,11 +324,18 @@ const MENU: MenuItem[] = [
 function setupContextMenu() {
   const menu = document.createElement('div');
   menu.className = 'mtx-context-menu';
+  // Theming: derive every colour from VS Code's own webview CSS variables so
+  // the menu matches whatever theme the editor is using (light, dark, high
+  // contrast, custom). Fallbacks keep it legible if a variable is missing.
   menu.style.cssText = [
     'position:fixed', 'z-index:99999', 'display:none',
     'min-width:200px', 'padding:4px 0', 'border-radius:6px',
-    'background:#fff', 'color:#24292e', 'box-shadow:0 2px 12px rgba(0,0,0,.18)',
-    'font:13px sans-serif', 'user-select:none',
+    'background:var(--vscode-menu-background, var(--vscode-editorWidget-background, #fff))',
+    'color:var(--vscode-menu-foreground, var(--vscode-editorWidget-foreground, #24292e))',
+    'border:1px solid var(--vscode-menu-border, var(--vscode-editorWidget-border, rgba(0,0,0,.12)))',
+    'box-shadow:0 2px 12px rgba(0,0,0,.35)',
+    'font-family:var(--vscode-font-family, sans-serif)',
+    'font-size:var(--vscode-font-size, 13px)', 'user-select:none',
   ].join(';');
   document.body.appendChild(menu);
 
@@ -338,7 +345,7 @@ function setupContextMenu() {
   function makeRow(item: MenuItem): HTMLElement {
     if (item.sep) {
       const hr = document.createElement('div');
-      hr.style.cssText = 'height:1px;margin:4px 0;background:#e1e4e8';
+      hr.style.cssText = 'height:1px;margin:4px 0;background:var(--vscode-menu-separatorBackground, var(--vscode-editorWidget-border, #e1e4e8))';
       return hr;
     }
     const row = document.createElement('div');
@@ -351,15 +358,19 @@ function setupContextMenu() {
       lbl.textContent = item.label;
       const arrow = document.createElement('span');
       arrow.textContent = '▸';
-      arrow.style.cssText = 'margin-left:8px;color:#888';
+      arrow.style.cssText = 'margin-left:8px;opacity:.6';
       row.appendChild(lbl); row.appendChild(arrow);
       const sub = document.createElement('div');
       sub.className = 'mtx-context-submenu';
       sub.style.cssText = [
         'display:none', 'position:absolute', 'left:100%', 'top:-4px',
         'min-width:200px', 'padding:4px 0', 'border-radius:6px',
-        'background:#fff', 'color:#24292e',
-        'box-shadow:0 2px 12px rgba(0,0,0,.18)', 'font:13px sans-serif',
+        'background:var(--vscode-menu-background, var(--vscode-editorWidget-background, #fff))',
+        'color:var(--vscode-menu-foreground, var(--vscode-editorWidget-foreground, #24292e))',
+        'border:1px solid var(--vscode-menu-border, var(--vscode-editorWidget-border, rgba(0,0,0,.12)))',
+        'box-shadow:0 2px 12px rgba(0,0,0,.35)',
+        'font-family:var(--vscode-font-family, sans-serif)',
+        'font-size:var(--vscode-font-size, 13px)',
       ].join(';');
       for (const subItem of item.submenu) sub.appendChild(makeRow(subItem));
       row.appendChild(sub);
@@ -370,14 +381,20 @@ function setupContextMenu() {
       if (item.shortcut) {
         const sc = document.createElement('span');
         sc.textContent = item.shortcut;
-        sc.style.cssText = 'color:#888;font-size:11px';
+        sc.style.cssText = 'opacity:.6;font-size:11px';
         row.appendChild(sc);
       }
     }
     if (enabled && !item.submenu) {
       row.style.cursor = 'pointer';
-      row.addEventListener('mouseenter', () => { row.style.background = '#f0f3f6'; });
-      row.addEventListener('mouseleave', () => { row.style.background = 'transparent'; });
+      row.addEventListener('mouseenter', () => {
+        row.style.background = 'var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground, #f0f3f6))';
+        row.style.color = 'var(--vscode-menu-selectionForeground, inherit)';
+      });
+      row.addEventListener('mouseleave', () => {
+        row.style.background = 'transparent';
+        row.style.color = '';
+      });
       row.addEventListener('mousedown', (e) => {
         e.preventDefault();
         item.action!();
@@ -392,7 +409,10 @@ function setupContextMenu() {
 
   // CSS that reveals nested submenus on hover (continuous hover region).
   const style = document.createElement('style');
-  style.textContent = '.mtx-has-sub:hover > .mtx-context-submenu{display:block !important;}';
+  style.textContent = [
+    '.mtx-has-sub:hover > .mtx-context-submenu{display:block !important;}',
+    '.mtx-has-sub:hover{background:var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground, #f0f3f6));}',
+  ].join('\n');
   document.head.appendChild(style);
 
   function render() {

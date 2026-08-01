@@ -1,0 +1,35 @@
+import { default as Content } from '../block/base/content';
+import { TBlockPath } from '../block/types';
+import { Muya } from '../muya';
+import { Nullable } from '../types';
+import { default as Selection } from './index';
+import { IAnchorFocusInfo, INodeOffset, ISelection } from './types';
+declare class TextSelection {
+    private _muya;
+    private _selection;
+    anchorPath: TBlockPath;
+    anchorBlock: Nullable<Content>;
+    focusPath: TBlockPath;
+    focusBlock: Nullable<Content>;
+    anchor: Nullable<INodeOffset>;
+    focus: Nullable<INodeOffset>;
+    private _doc;
+    private _selectInfo;
+    constructor(_muya: Muya, _selection: Selection);
+    private get _scrollPage();
+    private get _isCollapsed();
+    get isSelectionInSameBlock(): boolean;
+    private get _direction();
+    private get _type();
+    collapse(): void;
+    selectAllContent(): void;
+    getSelection(): ISelection | null;
+    setSelection(anchor: IAnchorFocusInfo, focus: IAnchorFocusInfo): void;
+    private _emitSelectionChange;
+    private _listenSelectActions;
+    private _selectRange;
+    private _select;
+    private _setFocus;
+    private _updateSelection;
+}
+export default TextSelection;

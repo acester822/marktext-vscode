@@ -1,0 +1,15 @@
+import { Muya } from '../../index';
+import { default as BaseFloat } from '../baseFloat';
+export declare class ImageToolBar extends BaseFloat {
+    static pluginName: string;
+    private _oldVNode;
+    private _imageInfo;
+    private _icons;
+    private _reference;
+    private _block;
+    private _toolbarContainer;
+    constructor(muya: Muya, options?: {});
+    listen(): void;
+    private _render;
+    private _selectItem;
+}

@@ -7,9 +7,9 @@ active `.md` document.
 ## Architecture
 
 ```
-marktext (upstream clone, /home/ftr/Apps/marktext)
-  packages/muya            -> @muyajs/core  (browser-native WYSIWYG engine)
-       lib/ (built)         <- vendored + bundled into this extension's webview
+vendor/muya/                 Vendored muya engine (see vendor/muya/README.md)
+  lib/es, lib/*.mjs          -> @muyajs/core (browser-native WYSIWYG engine)
+  lib/assets, src/**/*.css   <- bundled into this extension's webview
 
 marktext-vscode (this extension)
   src/extension.ts         Extension host (Node side)
@@ -24,12 +24,26 @@ MarkText is an Electron app. Its editor engine, `@muyajs/core` (`packages/muya`)
 is a framework-free browser engine (contenteditable + snabbdom VDOM, no Electron
 imports). That is the embeddable piece. The full Electron shell is **not** used.
 
-The prebuilt muya ES bundle (`packages/muya/lib/es/index.js`) imports its icon
-assets as raw `.png` ES modules (`import x from "../assets/icons/….png"`). A VS
-Code webview cannot resolve raw file `import`s, so we **re-bundle the engine
-through esbuild** with asset loaders that inline every `.png/.svg/.woff/.woff2/
-.ttf/.css` as a data URL. The result is one self-contained `main.js` (IIFE) with
-no runtime file loads — verified to execute in jsdom.
+The engine is **vendored** into `vendor/muya/` rather than installed from npm.
+`@muyajs/core@0.2.0` exists on the registry, but that tarball was published in
+2024 and never refreshed while upstream kept committing under the same version:
+it lacks the `TableChessboard` export and CSS, and renames the `zhCN` locale
+export to `zh`. See `vendor/muya/README.md` for the full rationale and the exact
+upstream commit.
+
+The prebuilt muya ES bundle (`lib/es/index.js`) imports its icon assets as raw
+`.png` ES modules (`import x from "../assets/icons/….png"`). A VS Code webview
+cannot resolve raw file `import`s, so we **re-bundle the engine through esbuild**
+with asset loaders that inline every `.png/.svg/.woff/.woff2/.ttf/.css` as a data
+URL. The result is one self-contained `main.js` (IIFE) with no runtime file loads
+— verified to execute in jsdom.
+
+Because the JS bundle is built with `--loader:.css=empty`, the
+`import './index.css'` inside each muya UI plugin is discarded.
+`webview/src/muya-styles.css` re-imports those stylesheets into a sidecar
+`out/webview/main.css` that the host injects into the webview `<head>` — without
+it the quick-insert (`/`) menu and other popups render as unstyled blocks at the
+bottom of the document instead of floating elements.
 
 ### Message protocol (host <-> webview)
 
@@ -45,18 +59,27 @@ webview via `setMarkdown`. A guard (`applyingFromWebview`) prevents echo loops.
 
 ## Build
 
-```
-# from /home/ftr/Apps/marktext, build the engine first (once):
-pnpm -C packages/muya build      # emits packages/muya/lib/{es,umd,cjs,types}
+The vendored engine is committed, so no MarkText checkout is required:
 
-# from /home/ftr/Apps/marktext-vscode:
+```
 npm install
 npm run build                    # host (esbuild) + webview (esbuild, assets inlined)
 npx vsce package --allow-missing-repository
 ```
 
-`tsconfig.json` maps the bare `muya-core` specifier to the prebuilt bundle's type
-declarations so `tsc` checks the webview against the engine's real API.
+To refresh the vendored engine from a MarkText checkout (rarely needed):
+
+```
+pnpm -C packages/muya build      # in the marktext repo, emits lib/{es,umd,cjs,types}
+MARKTEXT_PATH=/path/to/marktext npm run vendor:muya
+```
+
+`tsconfig.json` maps the bare `@muyajs/core` specifier to the vendored bundle's
+type declarations so `tsc` checks the webview against the engine's real API.
+
+## License
+
+MIT. Bundles MarkText's muya engine, also MIT — see `vendor/muya/LICENSE`.
 
 ## Usage
 

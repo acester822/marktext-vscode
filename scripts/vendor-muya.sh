@@ -24,10 +24,11 @@ rm -rf "$DEST"
 mkdir -p "$DEST/lib" "$DEST/src/assets" "$DEST/src/ui"
 
 # Runtime: the ESM entry, its sibling chunks, and the hashed asset files they
-# import. umd/, cjs/ and types/ are deliberately skipped (~10MB, unused by the
-# esbuild IIFE bundle).
+# import. umd/ and cjs/ are deliberately skipped (~8MB, unused by the esbuild
+# IIFE bundle). types/ is kept for editor IntelliSense (tsconfig paths).
 cp -r "$SRC/lib/es" "$DEST/lib/es"
 cp -r "$SRC/lib/assets" "$DEST/lib/assets"
+cp -r "$SRC/lib/types" "$DEST/lib/types"
 cp "$SRC"/lib/*.mjs "$DEST/lib/"
 
 # Styles: the editor surface plus each UI plugin's index.css, which the JS

@@ -67,14 +67,36 @@ export const FTR10_MUYA_BRIDGE_CSS = `
   --delete-color: var(--ftr10-error, #ff6969);
   --icon-color: var(--ftr10-text-muted, #6b737b);
 
+  /* ── headings ───────────────────────────────────────────────
+     muya colours headings through its OWN --hN-color vars (see
+     vendor/muya/src/assets/styles/index.css), not element rules — mapping
+     these is what actually tints h1..h6. --ftr10-h6-color does not exist in
+     the Architect palette, so h6 reuses the h5 token. */
+  --h1-color: var(--ftr10-h1-color, var(--editor-color-80));
+  --h2-color: var(--ftr10-h2-color, var(--editor-color-80));
+  --h3-color: var(--ftr10-h3-color, var(--editor-color-80));
+  --h4-color: var(--ftr10-h4-color, var(--editor-color-80));
+  --h5-color: var(--ftr10-h5-color, var(--editor-color-80));
+  --h6-color: var(--ftr10-h5-color, var(--editor-color-80));
+
+  /* ── inline text ────────────────────────────────────────────── */
+  --strong-color: var(--ftr10-strong-color, var(--editor-color-80));
+  --em-color: var(--ftr10-em-color, var(--editor-color-80));
+  --link-color: var(--ftr10-accent-1, #4183c4);
+  --list-marker-color: var(--ftr10-accent-2, var(--editor-color-50));
+  --hr-color: var(--ftr10-border, var(--editor-color-10));
+
   /* ── blocks ─────────────────────────────────────────────────── */
   --code-block-bg-color: var(--ftr10-code-bg, rgb(0 0 0 / 3%));
+  --blockquote-text-color: var(--ftr10-text-muted, var(--editor-color-50));
+  --blockquote-border-color: var(--ftr10-blockquote-border, var(--editor-color-10));
   --table-border-color: var(--ftr10-border, #e5e5e5);
   --input-bg-color: var(--ftr10-glass-bg, rgb(0 0 0 / 6%));
 
   /* ── floating UI (quick-insert menu, front menu, toolbars) ──── */
   --float-bg-color: var(--ftr10-glass-bg-menu, #fff);
   --float-hover-color: var(--ftr10-glass-bg-hover, rgb(0 0 0 / 4%));
+  --float-border-color: var(--ftr10-border-base, rgb(0 0 0 / 10%));
   --float-shadow: var(--ftr10-shadow-popup,
     rgb(15 15 15 / 3%) 0 0 0 1px, rgb(15 15 15 / 4%) 0 3px 6px, rgb(15 15 15 / 5%) 0 9px 24px);
 
@@ -86,66 +108,77 @@ export const FTR10_MUYA_BRIDGE_CSS = `
   --button-border-hover: 1px solid var(--ftr10-border-base, #dcdfe6);
   --button-bg-color-active: var(--ftr10-glass-bg-active, var(--button-bg-color));
   --button-border-active: 1px solid var(--ftr10-accent-1, transparent);
-
-  /* ── typography ─────────────────────────────────────────────── */
-  --font-sans-serif: var(--ftr10-body-font, "Open Sans", "Clear Sans", "Helvetica Neue", Helvetica, Arial, sans-serif);
-  --font-monospace: var(--ftr10-code-font, "DejaVu Sans Mono", Consolas, "Liberation Mono", Courier, monospace);
+  --button-border-focus: 1px solid var(--ftr10-accent-1, transparent);
 }
 
-/* Editor chrome: paint the muya surface with the Architect palette. The
-   webview body is transparent so the workbench background shows through. */
-#app .mu-editor {
+/* Editor chrome. muya's container is .mu-container (NOT .mu-editor); the
+   webview body stays transparent so the workbench background shows through. */
+#app .mu-container {
   color: var(--ftr10-text, inherit);
   font-family: var(--ftr10-body-font, inherit);
   background: transparent;
 }
 
-/* Headings follow the Architect heading ramp. */
-#app .mu-editor h1 { color: var(--ftr10-h1-color, inherit); font-family: var(--ftr10-heading-font, inherit); }
-#app .mu-editor h2 { color: var(--ftr10-h2-color, inherit); font-family: var(--ftr10-heading-font, inherit); }
-#app .mu-editor h3 { color: var(--ftr10-h3-color, inherit); font-family: var(--ftr10-heading-font, inherit); }
-#app .mu-editor h4 { color: var(--ftr10-h4-color, inherit); font-family: var(--ftr10-heading-font, inherit); }
-#app .mu-editor h5,
-#app .mu-editor h6 { color: var(--ftr10-h5-color, inherit); font-family: var(--ftr10-heading-font, inherit); }
+/* Heading font + tracking are not covered by muya's --hN-color vars. */
+#app .mu-container h1,
+#app .mu-container h2,
+#app .mu-container h3,
+#app .mu-container h4,
+#app .mu-container h5,
+#app .mu-container h6 {
+  font-family: var(--ftr10-heading-font, inherit);
+  letter-spacing: var(--ftr10-heading-spacing, normal);
+  text-transform: var(--ftr10-heading-transform, none);
+}
 
-/* Inline emphasis / marks. */
-#app .mu-editor strong { color: var(--ftr10-strong-color, inherit); }
-#app .mu-editor em { color: var(--ftr10-em-color, inherit); }
-#app .mu-editor mark {
+/* Marks / highlights. */
+#app .mu-container mark {
   background: var(--ftr10-mark-bg, inherit);
   color: var(--ftr10-mark-color, inherit);
 }
-#app .mu-editor a { color: var(--ftr10-accent-1, inherit); }
 
 /* Code: inline + fenced. */
-#app .mu-editor code {
+#app .mu-container code {
   background: var(--ftr10-code-bg, inherit);
   border-radius: var(--ftr10-radius-inline, 3px);
   font-family: var(--ftr10-code-font, inherit);
 }
-#app .mu-editor pre {
+#app .mu-container pre {
   background: var(--ftr10-code-bg, inherit);
   border-left: 2px solid var(--ftr10-code-border-l, transparent);
   border-radius: var(--ftr10-radius-block, 8px);
 }
 
-/* Blockquote. */
-#app .mu-editor blockquote {
+/* Blockquote. muya draws the bar as a ::before pseudo-element (background, not
+   border-left), so the width token has to be applied there — a border-left rule
+   here would be inert. Colour comes via --blockquote-border-color above. */
+#app .mu-container blockquote {
   background: var(--ftr10-blockquote-bg, transparent);
-  border-left: var(--ftr10-blockquote-width, 3px) solid var(--ftr10-blockquote-border, currentColor);
   border-radius: var(--ftr10-radius-quote, 4px);
 }
-
-/* Images + horizontal rules. */
-#app .mu-editor img { border-radius: var(--ftr10-radius-img, 8px); }
-#app .mu-editor hr { border-color: var(--ftr10-border, currentColor); }
-
-/* Floating popups: rounded to match the workbench, glass background. */
-.mu-float-wrapper,
-.mu-quick-insert,
-.mu-front-menu {
-  border-radius: var(--ftr10-radius-md, 4px);
+#app .mu-container blockquote::before {
+  width: var(--ftr10-blockquote-width, 2px);
 }
+
+/* Images. */
+#app .mu-container img { border-radius: var(--ftr10-radius-img, 8px); }
+
+/* Floating popups: rounded + glass to match the workbench. The muya UI plugins
+   render into .mu-float-wrapper at the BODY level, outside #app — so these
+   must not be scoped under #app.
+   Interior colours (.title, .item, hover) already resolve through the bridge
+   above, since muya's own rules read --float-bg-color / --float-hover-color /
+   --editor-color. Only the chrome needs adding here. */
+.mu-float-wrapper {
+  border-radius: var(--ftr10-radius-md, 2px);
+  font-family: var(--ftr10-body-font, inherit);
+  backdrop-filter: var(--ftr10-blur-md, none);
+}
+/* The sticky group header inherits the popup background; keep it muted so it
+   reads as a label rather than a row. */
+.mu-quick-insert .title { color: var(--ftr10-text-muted, var(--editor-color)); }
+.mu-quick-insert .active,
+.mu-quick-insert div.item:hover { color: var(--ftr10-accent-1, inherit); }
 `;
 
 /**

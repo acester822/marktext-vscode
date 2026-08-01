@@ -1,32 +1,36 @@
 /* Collect MarkText's editor stylesheets into one bundle. The webview build
    compiles this to out/webview/main.css, which the host injects into the
-   webview <head> so the WYSIWYG surface is actually styled. */
-@import '/home/ftr/Apps/marktext/packages/muya/src/assets/styles/blockSyntax.css';
-@import '/home/ftr/Apps/marktext/packages/muya/src/assets/styles/index.css';
-@import '/home/ftr/Apps/marktext/packages/muya/src/assets/styles/inlineSyntax.css';
-@import '/home/ftr/Apps/marktext/packages/muya/src/assets/styles/prismjs/light.theme.css';
+   webview <head> so the WYSIWYG surface is actually styled.
+
+   Sources live in vendor/muya/src — a vendored copy of the muya engine
+   (marktext release/v0.20.0, commit 8f1d0a62) so this repo builds with no
+   dependency on a MarkText checkout. See vendor/muya/README.md. */
+@import '../../vendor/muya/src/assets/styles/blockSyntax.css';
+@import '../../vendor/muya/src/assets/styles/index.css';
+@import '../../vendor/muya/src/assets/styles/inlineSyntax.css';
+@import '../../vendor/muya/src/assets/styles/prismjs/light.theme.css';
 
 /* Floating UI plugin styles. The webview JS bundle is built with
    `--loader:.css=empty`, so the `import './index.css'` inside each muya UI
    plugin is discarded. Without these the quick-insert menu (`/`), front menu,
    toolbars, etc. render as unstyled blocks at the bottom of the document
    instead of positioned floating popups. */
-@import '/home/ftr/Apps/marktext/packages/muya/src/ui/baseFloat/index.css';
-@import '/home/ftr/Apps/marktext/packages/muya/src/ui/codeBlockLanguageSelector/index.css';
-@import '/home/ftr/Apps/marktext/packages/muya/src/ui/emojiSelector/index.css';
-@import '/home/ftr/Apps/marktext/packages/muya/src/ui/footnoteTool/index.css';
-@import '/home/ftr/Apps/marktext/packages/muya/src/ui/imageEditTool/index.css';
-@import '/home/ftr/Apps/marktext/packages/muya/src/ui/imagePicker/index.css';
-@import '/home/ftr/Apps/marktext/packages/muya/src/ui/imageResizeBar/index.css';
-@import '/home/ftr/Apps/marktext/packages/muya/src/ui/imageToolbar/index.css';
-@import '/home/ftr/Apps/marktext/packages/muya/src/ui/inlineFormatToolbar/index.css';
-@import '/home/ftr/Apps/marktext/packages/muya/src/ui/linkTools/index.css';
-@import '/home/ftr/Apps/marktext/packages/muya/src/ui/paragraphFrontButton/index.css';
-@import '/home/ftr/Apps/marktext/packages/muya/src/ui/paragraphFrontMenu/index.css';
-@import '/home/ftr/Apps/marktext/packages/muya/src/ui/paragraphQuickInsertMenu/index.css';
-@import '/home/ftr/Apps/marktext/packages/muya/src/ui/previewToolBar/index.css';
-@import '/home/ftr/Apps/marktext/packages/muya/src/ui/tableChessboard/index.css';
-@import '/home/ftr/Apps/marktext/packages/muya/src/ui/tableColumnToolbar/index.css';
-@import '/home/ftr/Apps/marktext/packages/muya/src/ui/tableDragBar/index.css';
-@import '/home/ftr/Apps/marktext/packages/muya/src/ui/tableRowColumMenu/index.css';
-@import '/home/ftr/Apps/marktext/packages/muya/src/ui/tooltip/index.css';
+@import '../../vendor/muya/src/ui/baseFloat/index.css';
+@import '../../vendor/muya/src/ui/codeBlockLanguageSelector/index.css';
+@import '../../vendor/muya/src/ui/emojiSelector/index.css';
+@import '../../vendor/muya/src/ui/footnoteTool/index.css';
+@import '../../vendor/muya/src/ui/imageEditTool/index.css';
+@import '../../vendor/muya/src/ui/imagePicker/index.css';
+@import '../../vendor/muya/src/ui/imageResizeBar/index.css';
+@import '../../vendor/muya/src/ui/imageToolbar/index.css';
+@import '../../vendor/muya/src/ui/inlineFormatToolbar/index.css';
+@import '../../vendor/muya/src/ui/linkTools/index.css';
+@import '../../vendor/muya/src/ui/paragraphFrontButton/index.css';
+@import '../../vendor/muya/src/ui/paragraphFrontMenu/index.css';
+@import '../../vendor/muya/src/ui/paragraphQuickInsertMenu/index.css';
+@import '../../vendor/muya/src/ui/previewToolBar/index.css';
+@import '../../vendor/muya/src/ui/tableChessboard/index.css';
+@import '../../vendor/muya/src/ui/tableColumnToolbar/index.css';
+@import '../../vendor/muya/src/ui/tableDragBar/index.css';
+@import '../../vendor/muya/src/ui/tableRowColumMenu/index.css';
+@import '../../vendor/muya/src/ui/tooltip/index.css';

@@ -354,26 +354,34 @@ function setupContextMenu() {
     const row = document.createElement('div');
     row.style.cssText = 'position:relative;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:6px 16px;white-space:nowrap';
     const enabled = !!item.action;
-    if (!enabled) row.style.opacity = '0.4';
+    // Dim the LABEL, not the row: `opacity` on the row inherits into the nested
+    // submenu, so dimming a submenu parent would wash out every child too.
+    if (!enabled && !item.submenu) row.style.color = 'var(--ftr10-disabled, #384149)';
     if (item.submenu) {
       row.classList.add('mtx-has-sub');
       const lbl = document.createElement('span');
       lbl.textContent = item.label;
       const arrow = document.createElement('span');
       arrow.textContent = '▸';
-      arrow.style.cssText = 'margin-left:8px;opacity:.6';
+      arrow.style.cssText = 'margin-left:8px;color:var(--ftr10-text-muted, #63676d)';
       row.appendChild(lbl); row.appendChild(arrow);
       const sub = document.createElement('div');
       sub.className = 'mtx-context-submenu';
       sub.style.cssText = [
         'display:none', 'position:absolute', 'left:100%', 'top:-4px',
         'min-width:200px', 'padding:4px 0', 'border-radius:6px',
-        'background:var(--ftr10-glass-bg-menu, var(--vscode-menu-background, #fff))',
+        // Opaque, NOT the translucent --ftr10-glass-bg-menu: the submenu is a
+        // child of the parent menu, so a semi-transparent fill would stack on
+        // top of the parent's own translucent background and read as a muddy
+        // double-darkened panel. --ftr10-glass-bg-widget-strong (#0f1117f0) is
+        // the palette's near-opaque surface and matches the workbench.
+        'background:var(--ftr10-glass-bg-widget-strong, var(--vscode-menu-background, #fff))',
         'color:var(--ftr10-text, var(--vscode-menu-foreground, #24292e))',
         'border:1px solid var(--ftr10-border-base, var(--vscode-menu-border, rgba(0,0,0,.12)))',
         'border-radius:var(--ftr10-radius-md, 6px)',
         'box-shadow:var(--ftr10-shadow-popup, 0 2px 12px rgba(0,0,0,.35))',
-        'backdrop-filter:var(--ftr10-blur-md, none)',
+        // No backdrop-filter here: a nested blur re-samples the already-blurred
+        // parent and compounds the wash-out.
         'font-family:var(--ftr10-body-font, var(--vscode-font-family, sans-serif))',
         'font-size:var(--vscode-font-size, 13px)',
       ].join(';');
@@ -386,7 +394,7 @@ function setupContextMenu() {
       if (item.shortcut) {
         const sc = document.createElement('span');
         sc.textContent = item.shortcut;
-        sc.style.cssText = 'opacity:.6;font-size:11px';
+        sc.style.cssText = 'color:var(--ftr10-text-muted, #63676d);font-size:11px';
         row.appendChild(sc);
       }
     }

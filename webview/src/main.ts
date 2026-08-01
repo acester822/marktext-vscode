@@ -31,7 +31,8 @@ type InitMsg = { type: 'init'; markdown: string; theme: 'light' | 'dark'; uri: s
 type SetMarkdownMsg = { type: 'setMarkdown'; markdown: string };
 type ThemeMsg = { type: 'theme'; theme: 'light' | 'dark' };
 type WorkspaceImageMsg = { type: 'workspaceImage'; requestId: number; path: string | null };
-type ToWebview = InitMsg | SetMarkdownMsg | ThemeMsg | WorkspaceImageMsg;
+type Ftr10CssMsg = { type: 'ftr10Css'; css: string };
+type ToWebview = InitMsg | SetMarkdownMsg | ThemeMsg | WorkspaceImageMsg | Ftr10CssMsg;
 type FromWebview =
   | { type: 'ready' }
   | { type: 'change'; markdown: string }
@@ -330,11 +331,13 @@ function setupContextMenu() {
   menu.style.cssText = [
     'position:fixed', 'z-index:99999', 'display:none',
     'min-width:200px', 'padding:4px 0', 'border-radius:6px',
-    'background:var(--vscode-menu-background, var(--vscode-editorWidget-background, #fff))',
-    'color:var(--vscode-menu-foreground, var(--vscode-editorWidget-foreground, #24292e))',
-    'border:1px solid var(--vscode-menu-border, var(--vscode-editorWidget-border, rgba(0,0,0,.12)))',
-    'box-shadow:0 2px 12px rgba(0,0,0,.35)',
-    'font-family:var(--vscode-font-family, sans-serif)',
+    'background:var(--ftr10-glass-bg-menu, var(--vscode-menu-background, #fff))',
+    'color:var(--ftr10-text, var(--vscode-menu-foreground, #24292e))',
+    'border:1px solid var(--ftr10-border-base, var(--vscode-menu-border, rgba(0,0,0,.12)))',
+    'border-radius:var(--ftr10-radius-md, 6px)',
+    'box-shadow:var(--ftr10-shadow-popup, 0 2px 12px rgba(0,0,0,.35))',
+    'backdrop-filter:var(--ftr10-blur-md, none)',
+    'font-family:var(--ftr10-body-font, var(--vscode-font-family, sans-serif))',
     'font-size:var(--vscode-font-size, 13px)', 'user-select:none',
   ].join(';');
   document.body.appendChild(menu);
@@ -345,7 +348,7 @@ function setupContextMenu() {
   function makeRow(item: MenuItem): HTMLElement {
     if (item.sep) {
       const hr = document.createElement('div');
-      hr.style.cssText = 'height:1px;margin:4px 0;background:var(--vscode-menu-separatorBackground, var(--vscode-editorWidget-border, #e1e4e8))';
+      hr.style.cssText = 'height:1px;margin:4px 0;background:var(--ftr10-border-subtle, var(--vscode-menu-separatorBackground, #e1e4e8))';
       return hr;
     }
     const row = document.createElement('div');
@@ -365,11 +368,13 @@ function setupContextMenu() {
       sub.style.cssText = [
         'display:none', 'position:absolute', 'left:100%', 'top:-4px',
         'min-width:200px', 'padding:4px 0', 'border-radius:6px',
-        'background:var(--vscode-menu-background, var(--vscode-editorWidget-background, #fff))',
-        'color:var(--vscode-menu-foreground, var(--vscode-editorWidget-foreground, #24292e))',
-        'border:1px solid var(--vscode-menu-border, var(--vscode-editorWidget-border, rgba(0,0,0,.12)))',
-        'box-shadow:0 2px 12px rgba(0,0,0,.35)',
-        'font-family:var(--vscode-font-family, sans-serif)',
+        'background:var(--ftr10-glass-bg-menu, var(--vscode-menu-background, #fff))',
+        'color:var(--ftr10-text, var(--vscode-menu-foreground, #24292e))',
+        'border:1px solid var(--ftr10-border-base, var(--vscode-menu-border, rgba(0,0,0,.12)))',
+        'border-radius:var(--ftr10-radius-md, 6px)',
+        'box-shadow:var(--ftr10-shadow-popup, 0 2px 12px rgba(0,0,0,.35))',
+        'backdrop-filter:var(--ftr10-blur-md, none)',
+        'font-family:var(--ftr10-body-font, var(--vscode-font-family, sans-serif))',
         'font-size:var(--vscode-font-size, 13px)',
       ].join(';');
       for (const subItem of item.submenu) sub.appendChild(makeRow(subItem));
@@ -388,8 +393,8 @@ function setupContextMenu() {
     if (enabled && !item.submenu) {
       row.style.cursor = 'pointer';
       row.addEventListener('mouseenter', () => {
-        row.style.background = 'var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground, #f0f3f6))';
-        row.style.color = 'var(--vscode-menu-selectionForeground, inherit)';
+        row.style.background = 'var(--ftr10-glass-bg-hover, var(--vscode-menu-selectionBackground, #f0f3f6))';
+        row.style.color = 'var(--ftr10-accent-1, var(--vscode-menu-selectionForeground, inherit))';
       });
       row.addEventListener('mouseleave', () => {
         row.style.background = 'transparent';
@@ -411,7 +416,7 @@ function setupContextMenu() {
   const style = document.createElement('style');
   style.textContent = [
     '.mtx-has-sub:hover > .mtx-context-submenu{display:block !important;}',
-    '.mtx-has-sub:hover{background:var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground, #f0f3f6));}',
+    '.mtx-has-sub:hover{background:var(--ftr10-glass-bg-hover, var(--vscode-menu-selectionBackground, #f0f3f6));}',
   ].join('\n');
   document.head.appendChild(style);
 
@@ -463,6 +468,16 @@ window.addEventListener('message', (ev: MessageEvent) => {
     case 'theme':
       applyTheme(msg.theme);
       break;
+    case 'ftr10Css': {
+      // Live palette update from the FTR10 Architect watcher. Swap the CSS text
+      // in place — do NOT rebuild the editor, which would reset the caret.
+      const el = document.getElementById('ftr10-theme');
+      if (el) {
+        el.textContent = msg.css;
+        console.log('[marktext-webview] ftr10 palette updated (len ' + msg.css.length + ')');
+      }
+      break;
+    }
     case 'workspaceImage':
       pendingImages.get(msg.requestId)?.(msg.path);
       pendingImages.delete(msg.requestId);

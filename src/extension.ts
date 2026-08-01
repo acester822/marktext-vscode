@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import { buildFtr10Css, isFtr10Present, watchFtr10Theme, FTR10_COLORS_CSS_PATH } from './ftr10-theme';
 
 // ---------- message protocol (host <-> webview) ----------
 interface InitMsg { type: 'init'; markdown: string; theme: 'light' | 'dark'; uri: string; dev?: boolean; }
@@ -10,9 +11,10 @@ interface ReadyMsg { type: 'ready'; }
 interface ThemeMsg { type: 'theme'; theme: 'light' | 'dark'; }
 interface OpenExternalMsg { type: 'openExternal'; href: string; }
 interface RequestImageMsg { type: 'requestWorkspaceImage'; requestId: number; }
+interface Ftr10CssMsg { type: 'ftr10Css'; css: string; }
 interface WorkspaceImageMsg { type: 'workspaceImage'; requestId: number; path: string | null; }
 interface ReloadMsg { type: 'reload'; }
-type ToWebview = InitMsg | SetMarkdownMsg | ThemeMsg | WorkspaceImageMsg | ReloadMsg;
+type ToWebview = InitMsg | SetMarkdownMsg | ThemeMsg | WorkspaceImageMsg | ReloadMsg | Ftr10CssMsg;
 type FromWebview = ReadyMsg | ChangeMsg | OpenExternalMsg | RequestImageMsg;
 
 let activePanel: vscode.WebviewPanel | undefined;
@@ -73,6 +75,7 @@ function buildHtml(panel: vscode.WebviewPanel): string {
     path.join(EXT_ROOT, 'out', 'webview', 'main.js')));
   const nonce = getNonce();
   const css = readMuyaCss();
+  const ftr10Css = buildFtr10Css();
   // main.js is a self-contained IIFE (muya + UI + message protocol); the editor
   // CSS is injected here so the WYSIWYG surface is actually styled.
   return `<!doctype html>
@@ -89,16 +92,14 @@ function buildHtml(panel: vscode.WebviewPanel): string {
 <style nonce="${nonce}">
 ${css}
 </style>
-<style nonce="${nonce}">
-  /* Must come AFTER the muya bundle: it declares its own :root values for
-     these, and last-wins at equal specificity. Maps muya's floating-UI theme
-     variables onto VS Code's theme colors so the quick-insert (/) menu, front
-     menu and toolbars match the active editor theme. */
-  :root {
-    --float-bg-color: var(--vscode-menu-background, var(--vscode-editorWidget-background, #fff));
-    --float-hover-color: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground, rgba(0,0,0,.06)));
-    --float-shadow: 0 2px 12px rgba(0,0,0,.35);
-  }
+<style nonce="${nonce}" id="ftr10-theme">
+  /* Must come AFTER the muya bundle: muya declares its own :root values for
+     these, and last-wins at equal specificity. FTR10 Architect design tokens
+     (live from ~/.ftr10/css.files/colors.css, else a bundled snapshot) plus the
+     bridge that maps them onto the variables muya's stylesheets actually read.
+     Updated in place via the ftr10Css message — replacing the whole HTML
+     would remount muya and reset the caret. */
+${ftr10Css}
 </style>
 </head>
 <body>
@@ -144,6 +145,18 @@ export function activate(context: vscode.ExtensionContext) {
   });
 
   context.subscriptions.push(openCmd, reloadCmd, toggleDevCmd);
+
+  // Live-track the FTR10 Architect palette. When the user switches theme cards
+  // in Architect, colors.css is rewritten; push the new tokens straight into an
+  // open webview instead of rebuilding its HTML (which would remount muya and
+  // lose the caret / undo stack).
+  log('FTR10 Architect palette:', isFtr10Present() ? FTR10_COLORS_CSS_PATH : 'not installed (using bundled fallback)');
+  const ftr10Watcher = watchFtr10Theme(() => {
+    if (!activePanel) return;
+    log('FTR10 palette changed -> pushing css to webview');
+    post(activePanel, { type: 'ftr10Css', css: buildFtr10Css() });
+  });
+  context.subscriptions.push({ dispose: () => ftr10Watcher.dispose() });
 }
 
 function openEditorForDoc(doc: vscode.TextDocument, context: vscode.ExtensionContext) {

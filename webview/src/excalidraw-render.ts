@@ -152,6 +152,19 @@ function decorateBlock(pre: HTMLElement, uri: string) {
   ].join(';');
   btn.addEventListener('mouseenter', () => { btn.style.opacity = '1'; });
   btn.addEventListener('mouseleave', () => { btn.style.opacity = '0.85'; });
+  // The button lives inside muya's contenteditable container. muya's mousedown
+  // handler runs BEFORE click and plants the caret there — that's the flashing
+  // "editing" bar you see instead of the editor opening. Stopping propagation
+  // on mousedown/pointerdown (both phases muya listens in) keeps the event from
+  // ever reaching muya, so the click survives and we can post to the host.
+  const blockMuya = (e: Event) => {
+    e.stopPropagation();
+    e.preventDefault();
+  };
+  btn.addEventListener('mousedown', blockMuya, true); // capture, beats muya's bubble
+  btn.addEventListener('mousedown', blockMuya);       // bubble too, belt & braces
+  btn.addEventListener('pointerdown', blockMuya, true);
+  btn.addEventListener('pointerdown', blockMuya);
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();

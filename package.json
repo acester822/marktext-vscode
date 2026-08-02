@@ -2,7 +2,7 @@
   "name": "marktext-vscode",
   "displayName": "MarkText Editor",
   "description": "WYSIWYG Markdown editor for VS Code, powered by MarkText's @muyajs/core (muya) engine.",
-  "version": "0.4.5",
+  "version": "0.5.0",
   "publisher": "marktext-vscode",
   "license": "MIT",
   "engines": {
@@ -13,10 +13,33 @@
   ],
   "main": "./out/extension.js",
   "activationEvents": [
+    "onCustomEditor:marktext-vscode.marktextEditor",
     "onCommand:marktext-editor.open",
     "onCommand:marktext-editor.reloadWebview"
   ],
   "contributes": {
+    "customEditors": [
+      {
+        "viewType": "marktext-vscode.marktextEditor",
+        "displayName": "MarkText WYSIWYG",
+        "selector": [
+          {
+            "filenamePattern": "*.md"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
+    "configuration": {
+      "title": "MarkText Editor",
+      "properties": {
+        "marktext.editor.defaultForMarkdown": {
+          "type": "boolean",
+          "default": false,
+          "description": "Open .md files in the MarkText WYSIWYG editor by default instead of the built-in Monaco text editor. Toggle this off to always use the classic editor (you can still switch per-file from the editor title bar)."
+        }
+      }
+    },
     "commands": [
       {
         "command": "marktext-editor.open",
@@ -29,13 +52,28 @@
       {
         "command": "marktext-editor.toggleDev",
         "title": "MarkText: Toggle Dev Mode (verbose logging)"
+      },
+      {
+        "command": "marktext-editor.useClassic",
+        "title": "MarkText: Switch to Classic Editor",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "marktext-editor.useWysiwyg",
+        "title": "MarkText: Switch to WYSIWYG Editor",
+        "icon": "$(markdown)"
       }
     ],
     "menus": {
       "editor/title": [
         {
-          "command": "marktext-editor.open",
-          "when": "resourceExtname == .md",
+          "command": "marktext-editor.useClassic",
+          "when": "resourceExtname == .md && editorId == marktext-vscode.marktextEditor",
+          "group": "navigation"
+        },
+        {
+          "command": "marktext-editor.useWysiwyg",
+          "when": "resourceExtname == .md && editorId != marktext-vscode.marktextEditor",
           "group": "navigation"
         }
       ],

@@ -20,67 +20,59 @@ interface RefreshExcalidrawMsg { type: 'refreshExcalidraw'; uri: string; }
 type ToWebview = InitMsg | SetMarkdownMsg | ThemeMsg | WorkspaceImageMsg | ReloadMsg | Ftr10CssMsg | RefreshExcalidrawMsg;
 type FromWebview = ReadyMsg | ChangeMsg | OpenExternalMsg | RequestImageMsg | ExcalidrawEditMsg;
 
-let activePanel: vscode.WebviewPanel | undefined;
-// Set synchronously just before we applyEdit for a webview-originated change,
-// and cleared on a LATER macrotask (setTimeout 0) — NOT inside the change
-// handler. A single full-document applyEdit fires MULTIPLE onDidChangeText-
-// Document events, all synchronously within the applyEdit call, so a flag
-// cleared inside the handler would miss the 2nd+ events and let the echo
-// through. Keeping the flag true until after the synchronous applyEdit returns
-// suppresses every event of that one edit.
+const VIEW_TYPE = 'marktext-vscode.marktextEditor';
+// The built-in Monaco text editor. Used to flip a .md file back to the classic
+// editor from the title-bar toggle. `default` is VS Code's reserved id for the
+// standard text editor of a language.
+const TEXT_EDITOR_ID = 'default';
+
+let devMode = false;
+// Per-document echo guard. Set synchronously just before we applyEdit for a
+// webview-originated change, cleared on a later macrotask (setTimeout 0). A
+// single full-document applyEdit fires MULTIPLE onDidChangeTextDocument events
+// synchronously within the applyEdit call, so a flag cleared inside the change
+// handler would miss the 2nd+ events and let the echo through.
 let applyingFromWebview = false;
-// The markdown text we last synced in EITHER direction. Backstop for any
+// The markdown text we last synced in EITHER direction, as a backstop for any
 // change event that fires AFTER the flag is cleared (async/late): if its text
 // (EOL + trailing-newline normalised) equals this, it is our own round-trip.
 let lastSyncedMarkdown = '';
-// Dev/debug mode: verbose host<->webview logging + verbose webview console.
-let devMode = false;
 
-// Normalise for echo comparison: unify CRLF->LF and ignore trailing newlines,
-// because VS Code's stored text does not byte-match what muya serialises
-// (off-by-one trailing newline / EOL), which otherwise defeats the compare.
+// One editor session per TextDocument. The webview panel is provided by VS Code
+// through resolveCustomTextEditor; we re-bind it when the same document is
+// reopened (e.g. switching editor types) instead of leaking duplicates.
+const sessions = new Map<string, MarkdownSession>();
+
 const normText = (s: string) => s.replace(/\r\n/g, '\n').replace(/\n+$/, '');
-
-const log = (...args: unknown[]) => {
-  if (devMode) console.log('[marktext]', ...args);
-};
-
+const log = (...args: unknown[]) => { if (devMode) console.log('[marktext]', ...args); };
 function getNonce(): string {
-  let text = '';
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  for (let i = 0; i < 32; i++) text += chars[Math.floor(Math.random() * chars.length)];
-  return text;
+  let t = '';
+  const c = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  for (let i = 0; i < 32; i++) t += c[Math.floor(Math.random() * c.length)];
+  return t;
 }
-
 function getMdDocument(): vscode.TextDocument | undefined {
-  const editor = vscode.window.activeTextEditor;
-  if (editor && editor.document.languageId === 'markdown') return editor.document;
-  const md = vscode.window.visibleTextEditors.find(e => e.document.languageId === 'markdown');
-  return md?.document;
+  const e = vscode.window.activeTextEditor;
+  if (e && e.document.languageId === 'markdown') return e.document;
+  return vscode.window.visibleTextEditors.find(x => x.document.languageId === 'markdown')?.document;
 }
-
 function post(panel: vscode.WebviewPanel, msg: ToWebview) {
   log('-> webview', msg.type, 'uri' in msg ? (msg as any).uri : '');
   panel.webview.postMessage(msg);
 }
-
 function readMuyaCss(): string {
-  const cssPath = path.join(EXT_ROOT, 'out', 'webview', 'main.css');
-  try {
-    return fs.readFileSync(cssPath, 'utf8');
-  } catch {
-    return '';
-  }
+  try { return fs.readFileSync(path.join(EXT_ROOT, 'out', 'webview', 'main.css'), 'utf8'); }
+  catch { return ''; }
 }
 
+let EXT_ROOT = '';
+let extContext: vscode.ExtensionContext | undefined;
+
 function buildHtml(panel: vscode.WebviewPanel): string {
-  const scriptUri = panel.webview.asWebviewUri(vscode.Uri.file(
-    path.join(EXT_ROOT, 'out', 'webview', 'main.js')));
+  const scriptUri = panel.webview.asWebviewUri(vscode.Uri.file(path.join(EXT_ROOT, 'out', 'webview', 'main.js')));
   const nonce = getNonce();
   const css = readMuyaCss();
   const ftr10Css = buildFtr10Css();
-  // main.js is a self-contained IIFE (muya + UI + message protocol); the editor
-  // CSS is injected here so the WYSIWYG surface is actually styled.
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -112,100 +104,28 @@ ${ftr10Css}
 </html>`;
 }
 
-let EXT_ROOT = '';
-let activeUri = '';
-
-export function activate(context: vscode.ExtensionContext) {
-  EXT_ROOT = context.extensionUri.fsPath;
-  // Persist dev mode across reloads within the workspace.
-  devMode = context.workspaceState.get<boolean>('devMode', false);
-  log('activate; devMode =', devMode);
-
-  const openCmd = vscode.commands.registerCommand('marktext-editor.open', () => {
-    const doc = getMdDocument();
-    if (!doc) {
-      vscode.window.showInformationMessage('Open a Markdown (.md) file first, then run "MarkText: Open WYSIWYG Editor".');
-      return;
-    }
-    openEditorForDoc(doc, context);
-  });
-
-  const reloadCmd = vscode.commands.registerCommand('marktext-editor.reloadWebview', () => {
-    if (activePanel) {
-      // Re-set the HTML with a fresh nonce — forces the webview to reload the
-      // script and fully re-initialise (used for hot-reload during dev).
-      activePanel.webview.html = buildHtml(activePanel);
-      log('reload requested');
-    } else {
-      vscode.window.showInformationMessage('MarkText: no webview open to reload.');
-    }
-  });
-
-  const toggleDevCmd = vscode.commands.registerCommand('marktext-editor.toggleDev', async () => {
-    devMode = !devMode;
-    await context.workspaceState.update('devMode', devMode);
-    vscode.window.showInformationMessage(`MarkText dev mode: ${devMode ? 'ON' : 'OFF'} (reload webview to apply).`);
-  });
-
-  context.subscriptions.push(openCmd, reloadCmd, toggleDevCmd);
-
-  // Live-track the FTR10 Architect palette. When the user switches theme cards
-  // in Architect, colors.css is rewritten; push the new tokens straight into an
-  // open webview instead of rebuilding its HTML (which would remount muya and
-  // lose the caret / undo stack).
-  log('FTR10 Architect palette:', isFtr10Present() ? FTR10_COLORS_CSS_PATH : 'not installed (using bundled fallback)');
-  const ftr10Watcher = watchFtr10Theme(() => {
-    if (!activePanel) return;
-    log('FTR10 palette changed -> pushing css to webview');
-    post(activePanel, { type: 'ftr10Css', css: buildFtr10Css() });
-  });
-  context.subscriptions.push({ dispose: () => ftr10Watcher.dispose() });
+interface MarkdownSession {
+  panel: vscode.WebviewPanel;
+  uri: vscode.Uri;
+  subscriptions: vscode.Disposable[];
+  disposed: boolean;
+  bind(document: vscode.TextDocument): void;
 }
 
-function openEditorForDoc(doc: vscode.TextDocument, context: vscode.ExtensionContext) {
-  const uri = doc.uri;
-  activeUri = uri.toString();
-  const column = vscode.ViewColumn.Active;
-
-  if (activePanel) {
-    activePanel.reveal(column);
-    // Rebind to the newly requested doc without recreating the panel.
-    bindDocument(activePanel, uri, context);
-    return;
-  }
-
-  const panel = vscode.window.createWebviewPanel(
-    'marktextEditor',
-    `MarkText: ${path.basename(uri.fsPath)}`,
-    column,
-    {
-      enableScripts: true,
-      retainContextWhenHidden: true,
-      localResourceRoots: [vscode.Uri.file(path.join(EXT_ROOT, 'out'))],
-    });
-
-  activePanel = panel;
-  panel.webview.html = buildHtml(panel);
-
-  // `ready` is posted by the webview once per boot. We only bind on the first
-  // one to avoid double-initialising (which would mount two Muya instances).
-  let bound = false;
+function createSession(panel: vscode.WebviewPanel, uri: vscode.Uri): MarkdownSession {
+  const session: MarkdownSession = {
+    panel, uri, subscriptions: [], disposed: false,
+    bind: (document: vscode.TextDocument) => { bindDocument(session, document); },
+  };
 
   panel.webview.onDidReceiveMessage((msg: FromWebview) => {
     log('<- webview', msg.type);
-    // Host-side trace (Extension Host console) of the sync flow, so a broken
-    // round-trip is visible even with dev mode off.
     if (msg.type === 'change') console.log('[marktext-host] change from webview (len ' + msg.markdown.length + ')');
     switch (msg.type) {
       case 'ready':
-        if (!bound) {
-          bound = true;
-          bindDocument(panel, uri, context);
-        }
+        bindDocument(session, vscode.workspace.textDocuments.find(d => d.uri.toString() === uri.toString())!);
         break;
       case 'change':
-        // Remember what we are about to write so the resulting change events
-        // (applyEdit emits several) are recognised as our own echo and skipped.
         lastSyncedMarkdown = msg.markdown;
         applyChangeToDocument(uri, msg.markdown);
         break;
@@ -214,15 +134,13 @@ function openEditorForDoc(doc: vscode.TextDocument, context: vscode.ExtensionCon
         break;
       case 'excalidrawEdit':
         console.log('[marktext-host] received excalidrawEdit from webview');
-        openExcalidrawEditor(vscode.Uri.parse(msg.uri), msg.data, context, activePanel);
+        openExcalidrawEditor(vscode.Uri.parse(msg.uri), msg.data, extContext!, panel);
         break;
       case 'requestWorkspaceImage': {
         const requestId = msg.requestId;
         const docDir = path.dirname(uri.fsPath);
         vscode.window.showOpenDialog({
-          canSelectFiles: true,
-          canSelectFolders: false,
-          canSelectMany: false,
+          canSelectFiles: true, canSelectFolders: false, canSelectMany: false,
           defaultUri: vscode.Uri.file(docDir),
           filters: { Images: ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'] },
         }).then((files) => {
@@ -235,28 +153,21 @@ function openEditorForDoc(doc: vscode.TextDocument, context: vscode.ExtensionCon
   });
 
   panel.onDidDispose(() => {
-    activePanel = undefined;
-  }, null, context.subscriptions);
+    session.disposed = true;
+    session.subscriptions.forEach(s => s.dispose());
+    sessions.delete(uri.toString());
+  });
 
-  context.subscriptions.push(panel);
+  return session;
 }
 
-function bindDocument(panel: vscode.WebviewPanel, uri: vscode.Uri, context: vscode.ExtensionContext) {
-  const doc = getOpenDoc(uri) ?? vscode.workspace.textDocuments.find(d => d.uri.toString() === uri.toString());
-  if (!doc) return;
-  // Reset echo state for this document so a stale value from a previously
-  // bound doc can't cause a false echo match on the first change.
+function bindDocument(session: MarkdownSession, doc: vscode.TextDocument) {
+  if (session.disposed) return;
+  const uri = session.uri;
   lastSyncedMarkdown = '';
   const theme = vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.Dark ? 'dark' : 'light';
-  post(panel, { type: 'init', markdown: doc.getText(), theme, uri: uri.toString(), dev: devMode });
+  post(session.panel, { type: 'init', markdown: doc.getText(), theme, uri: uri.toString(), dev: devMode });
 
-  // Forward external edits (typing in the text editor, or another source) to
-  // the webview. Suppress our OWN echo two ways:
-  //  1) applyingFromWebview flag is true for the entire synchronous applyEdit
-  //     (all of its multiple change events fire within that call), so any
-  //     event while it is true is our echo and is skipped.
-  //  2) as a backstop for any late/async event, if the event text (EOL +
-  //     trailing-newline normalised) equals lastSyncedMarkdown, skip it.
   const sub = vscode.workspace.onDidChangeTextDocument((e) => {
     if (e.document.uri.toString() !== uri.toString()) return;
     if (applyingFromWebview) {
@@ -270,30 +181,20 @@ function bindDocument(panel: vscode.WebviewPanel, uri: vscode.Uri, context: vsco
     }
     console.log('[marktext-host] external change -> post setMarkdown to webview (len ' + text.length + ')');
     lastSyncedMarkdown = text;
-    post(panel, { type: 'setMarkdown', markdown: text });
+    post(session.panel, { type: 'setMarkdown', markdown: text });
   });
-  context.subscriptions.push(sub);
+  session.subscriptions.push(sub);
 
   const themeSub = vscode.window.onDidChangeActiveColorTheme((t) => {
-    const kind = t.kind === vscode.ColorThemeKind.Dark ? 'dark' : 'light';
-    post(panel, { type: 'theme', theme: kind });
+    post(session.panel, { type: 'theme', theme: t.kind === vscode.ColorThemeKind.Dark ? 'dark' : 'light' });
   });
-  context.subscriptions.push(themeSub);
-}
-
-function getOpenDoc(uri: vscode.Uri): vscode.TextDocument | undefined {
-  return vscode.workspace.textDocuments.find(d => d.uri.toString() === uri.toString());
+  session.subscriptions.push(themeSub);
 }
 
 function applyChangeToDocument(uri: vscode.Uri, markdown: string) {
-  const doc = getOpenDoc(uri);
+  const doc = vscode.workspace.textDocuments.find(d => d.uri.toString() === uri.toString());
   if (!doc) return;
-  // No-op when the document already holds this text — prevents an echo loop.
   if (doc.getText() === markdown) return;
-  // Mark that the synchronous applyEdit below is ours; the change events it
-  // emits (multiple, all within the call) are skipped by the handler. Cleared
-  // on a later macrotask so it stays true for the whole synchronous applyEdit
-  // but cannot leak into a subsequent, unrelated external edit.
   applyingFromWebview = true;
   lastSyncedMarkdown = markdown;
   const edit = new vscode.WorkspaceEdit();
@@ -302,7 +203,116 @@ function applyChangeToDocument(uri: vscode.Uri, markdown: string) {
   setTimeout(() => { applyingFromWebview = false; }, 0);
 }
 
+// Reopen the active .md file in the classic Monaco editor.
+function switchToClassic() {
+  const ed = vscode.window.activeTextEditor;
+  if (!ed || ed.document.languageId !== 'markdown') {
+    vscode.window.showInformationMessage('MarkText: open a Markdown (.md) file first.');
+    return;
+  }
+  const uri = ed.document.uri;
+  // Close the WYSIWYG panel first so we don't end up with two tabs for one file.
+  vscode.commands.executeCommand('workbench.action.closeActiveEditor').then(() => {
+    vscode.commands.executeCommand('vscode.openWith', uri, TEXT_EDITOR_ID, ed.viewColumn);
+  });
+}
+
+// Reopen the active .md file in the MarkText WYSIWYG editor.
+function switchToWysiwyg() {
+  const ed = vscode.window.activeTextEditor;
+  if (!ed || ed.document.languageId !== 'markdown') {
+    vscode.window.showInformationMessage('MarkText: open a Markdown (.md) file first.');
+    return;
+  }
+  const uri = ed.document.uri;
+  vscode.commands.executeCommand('workbench.action.closeActiveEditor').then(() => {
+    vscode.commands.executeCommand('vscode.openWith', uri, VIEW_TYPE, ed.viewColumn);
+  });
+}
+
+function updateEditorAssociations() {
+  const cfg = vscode.workspace.getConfiguration('marktext.editor');
+  const wantDefault = cfg.get<boolean>('defaultForMarkdown', false);
+  const edAssoc = vscode.workspace.getConfiguration('workbench').get<Record<string, string>>('editorAssociations', {});
+  const current = edAssoc['*.md'];
+  if (wantDefault && current !== VIEW_TYPE) {
+    edAssoc['*.md'] = VIEW_TYPE;
+    vscode.workspace.getConfiguration('workbench').update('editorAssociations', edAssoc, vscode.ConfigurationTarget.Global);
+  } else if (!wantDefault && current === VIEW_TYPE) {
+    delete edAssoc['*.md'];
+    vscode.workspace.getConfiguration('workbench').update('editorAssociations', edAssoc, vscode.ConfigurationTarget.Global);
+  }
+}
+
+export function activate(context: vscode.ExtensionContext) {
+  EXT_ROOT = context.extensionUri.fsPath;
+  extContext = context;
+  devMode = context.workspaceState.get<boolean>('devMode', false);
+  log('activate; devMode =', devMode);
+
+  context.subscriptions.push(
+    vscode.window.registerCustomEditorProvider(
+      VIEW_TYPE,
+      {
+        async resolveCustomTextEditor(document: vscode.TextDocument, panel: vscode.WebviewPanel) {
+          log('resolveCustomTextEditor', document.uri.toString());
+          panel.webview.options = {
+            enableScripts: true,
+            localResourceRoots: [vscode.Uri.file(path.join(EXT_ROOT, 'out'))],
+          };
+          panel.webview.html = buildHtml(panel);
+          const existing = sessions.get(document.uri.toString());
+          if (existing) { existing.panel = panel; existing.bind(document); }
+          else sessions.set(document.uri.toString(), createSession(panel, document.uri));
+        },
+      },
+      {
+        webviewOptions: { retainContextWhenHidden: true },
+        supportsMultipleEditorsPerDocument: false,
+      },
+    ),
+  );
+
+  // Honor the opt-in setting: when enabled, .md files open in MarkText by default.
+  updateEditorAssociations();
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('marktext.editor.defaultForMarkdown')) updateEditorAssociations();
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('marktext-editor.open', () => {
+      const doc = getMdDocument();
+      if (!doc) { vscode.window.showInformationMessage('Open a Markdown (.md) file first, then run "MarkText: Open WYSIWYG Editor".'); return; }
+      vscode.commands.executeCommand('vscode.openWith', doc.uri, VIEW_TYPE, vscode.ViewColumn.Active);
+    }),
+    vscode.commands.registerCommand('marktext-editor.reloadWebview', () => {
+      const ed = vscode.window.activeTextEditor;
+      if (ed && ed.document.languageId === 'markdown') {
+        vscode.commands.executeCommand('workbench.action.closeActiveEditor');
+        vscode.commands.executeCommand('vscode.openWith', ed.document.uri, VIEW_TYPE, ed.viewColumn);
+      } else {
+        vscode.window.showInformationMessage('MarkText: no WYSIWYG editor open to reload.');
+      }
+    }),
+    vscode.commands.registerCommand('marktext-editor.toggleDev', async () => {
+      devMode = !devMode;
+      await context.workspaceState.update('devMode', devMode);
+      vscode.window.showInformationMessage(`MarkText dev mode: ${devMode ? 'ON' : 'OFF'} (reload webview to apply).`);
+    }),
+    vscode.commands.registerCommand('marktext-editor.useClassic', () => switchToClassic()),
+    vscode.commands.registerCommand('marktext-editor.useWysiwyg', () => switchToWysiwyg()),
+  );
+
+  log('FTR10 Architect palette:', isFtr10Present() ? FTR10_COLORS_CSS_PATH : 'not installed (using bundled fallback)');
+  const ftr10Watcher = watchFtr10Theme(() => {
+    sessions.forEach((s) => { if (!s.disposed) post(s.panel, { type: 'ftr10Css', css: buildFtr10Css() }); });
+  });
+  context.subscriptions.push({ dispose: () => ftr10Watcher.dispose() });
+}
+
 export function deactivate() {
-  activePanel?.dispose();
-  activePanel = undefined;
+  sessions.forEach(s => s.panel.dispose());
+  sessions.clear();
 }

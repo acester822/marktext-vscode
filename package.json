@@ -40,9 +40,9 @@
         },
         "marktext.editor.maxContentWidth": {
           "type": "number",
-          "default": 0,
+          "default": 125,
           "minimum": 0,
-          "description": "Max width of the editing column, in characters (ch units). 0 = fill the webview's full width (default). When set to e.g. 125, text wraps at that width and the column is centered in the webview while the content stays left-aligned. Tables and fenced code blocks follow the same width."
+          "description": "Max width of the editing column, in characters (ch units). The column is capped at this width and centered in the webview (margins on both sides) while text stays left-aligned inside it. Default 125. Set to 0 to fill the webview's full width instead. Tables and fenced code blocks follow the same width."
         }
       }
     },

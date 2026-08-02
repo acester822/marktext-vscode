@@ -95,19 +95,22 @@ async function imageAction(_info: { src?: string }): Promise<string> {
   const src = _info?.src ?? '';
   // Seed muya's urlMap/loadImageMap with the loadable webview URI for the
   // just-picked image so it renders immediately instead of failing the browser
-  // fetch. Register under BOTH the relative key and the file:// key muya's
-  // renderer may look up, then re-render the content blocks.
-  if (lastPickedImageUri && muya) {
+  // fetch. The renderer looks up the image by Pr(src).src (= `file://<path>`
+  // for a local/relative src), so seed that key (plus the bare src for safety).
+  // Do NOT trigger a full re-render here: muya's own _replaceImageWithUpload
+  // re-renders the single image block after this resolves, and a premature
+  // whole-document re-render would remove the transient "loading-…" element it
+  // still needs — which broke the insert (and the file update) before.
+  if (lastPickedImageUri && src) {
+    imageUriCache.set(src, lastPickedImageUri);
     const r = (muya as any).editor?.inlineRenderer?.renderer;
-    if (r && src) {
+    if (r) {
       for (const key of [src, `file://${src}`]) {
         r.urlMap.set(key, lastPickedImageUri);
         r.loadImageMap.set(key, { id: key, isSuccess: true, url: lastPickedImageUri, width: 100, height: 100 });
       }
-      imageUriCache.set(src, lastPickedImageUri);
-      lastPickedImageUri = null;
-      scheduleImageRefresh();
     }
+    lastPickedImageUri = null;
   }
   return src;
 }

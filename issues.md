@@ -8,7 +8,8 @@
 
 - [ ] Image insertion does not appear to work, the image menu pops up, and all clicks inside the menu appear to work, it just doesn't do anything. Adding a local image does correctly launch the "pick the file" within Codeserver like it should, but when I find and select the image nothing happens, here is an example
 
-  - [ ] ![Pic Of Something](./assets/menu-icon-dark.png)
+  - ![Pic Of Something](./assets/menu-icon-dark.png) `Internal Link`
+  - ![Pic Of Something 2](https://github.com/acester822/marktext-vscode/blob/32fa54b319e6df6c99d0ebe2e4b3c2ec874b5266/assets/menu-icon-dark.png) `External Link`
 
 ## Fixed:
 

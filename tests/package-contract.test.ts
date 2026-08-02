@@ -28,10 +28,10 @@ describe('package.json contributes.configuration', () => {
     expect(keys.sort()).toEqual(['marktext.editor.defaultForMarkdown', 'marktext.editor.maxContentWidth']);
   });
 
-  it('maxContentWidth is a non-negative number, default 0 (opt-in full width)', () => {
+  it('maxContentWidth is a non-negative number, default 125 (centered column)', () => {
     const prop = pkg.contributes.configuration.properties['marktext.editor.maxContentWidth'];
     expect(prop.type).toBe('number');
-    expect(prop.default).toBe(0);
+    expect(prop.default).toBe(125);
     expect(prop.minimum).toBe(0);
   });
 });

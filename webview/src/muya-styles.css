@@ -154,8 +154,8 @@ li.mu-task-list-item > span.mu-task-list-checkbox::after {
        a SOLID colour. --editor-bg-color resolves to --ftr10-bg, which in this
        theme is transparent/gradient — a transparent tick over the green fill is
        simply invisible, which is why the checked box read as a plain colour
-       block. --ftr10-surface-1 is the palette's solid surface colour. */
-    background-color: var(--ftr10-surface-1, var(--vscode-editor-background, #1e1e1e));
+       block. --ftr10-surface-2 is the palette's solid surface colour. */
+    background-color: var(--ftr10-surface-2, var(--vscode-editor-background, #1e1e1e));
     border: none;
 
     /* Core scales the tick in with `rotate(-45deg) scale(0)`; the mask artwork

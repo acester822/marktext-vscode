@@ -236,24 +236,181 @@ function selectAllInBlock() {
   }
 }
 
-// Find: search for the current selection (or word at caret) via muya's search.
-function findSelection() {
-  const sel = window.getSelection();
-  const term = sel ? sel.toString() : '';
-  if (!term || !muya) return;
-  muya.search(term);
-  muya.find('next');
+// ---------------------------------------------------------------------------
+// Find & replace.
+//
+// The previous implementation was broken two ways:
+//   1. `window.prompt()` is disabled inside VS Code webviews — it returns null
+//      immediately, so Replace could never collect a search term.
+//   2. Nothing bound Ctrl+F / Ctrl+R. The webview has keyboard focus, so those
+//      chords never reached the extension host, and the menu items were the
+//      only entry point (Find additionally no-opped unless text was selected).
+//
+// Both are fixed with an in-webview find bar: no host keybinding round-trip and
+// no prompt(). muya's engine already provides the search primitives —
+// `search(value, opts)`, `find('next'|'prev')`, `replace(text, opts)` — plus
+// `matches`/`index` for the counter.
+// ---------------------------------------------------------------------------
+let findBar: {
+  open: (withReplace: boolean) => void;
+  close: () => void;
+  isOpen: () => boolean;
+} | null = null;
+
+function setupFindBar() {
+  const bar = document.createElement('div');
+  bar.className = 'mtx-find-bar';
+  bar.style.cssText = [
+    'position:fixed', 'top:8px', 'right:12px', 'z-index:99998', 'display:none',
+    'padding:6px', 'gap:4px',
+    'background:var(--ftr10-glass-bg-widget-strong, var(--vscode-editorWidget-background, #252526))',
+    'color:var(--ftr10-text, var(--vscode-editorWidget-foreground, #ccc))',
+    'border:1px solid var(--ftr10-border-base, var(--vscode-editorWidget-border, rgba(0,0,0,.2)))',
+    'border-radius:var(--ftr10-radius-md, 6px)',
+    'box-shadow:var(--ftr10-shadow-popup, 0 2px 12px rgba(0,0,0,.35))',
+    'font-family:var(--ftr10-body-font, var(--vscode-font-family, sans-serif))',
+    'font-size:var(--vscode-font-size, 13px)',
+    'flex-direction:column',
+  ].join(';');
+
+  const inputCss = [
+    'flex:1', 'min-width:180px', 'padding:3px 6px',
+    'color:var(--ftr10-text, var(--vscode-input-foreground, #ccc))',
+    'background:var(--ftr10-glass-bg-input, var(--vscode-input-background, #3c3c3c))',
+    'border:1px solid var(--ftr10-border-base, var(--vscode-input-border, transparent))',
+    'border-radius:var(--ftr10-radius-sm, 4px)',
+    'outline:none', 'font-family:inherit', 'font-size:inherit',
+  ].join(';');
+  const btnCss = [
+    'padding:3px 8px', 'cursor:pointer',
+    'color:var(--ftr10-text, var(--vscode-button-secondaryForeground, #ccc))',
+    'background:var(--ftr10-glass-bg-hover, var(--vscode-button-secondaryBackground, #3a3d41))',
+    'border:1px solid var(--ftr10-border-subtle, transparent)',
+    'border-radius:var(--ftr10-radius-sm, 4px)',
+    'font-family:inherit', 'font-size:inherit',
+  ].join(';');
+
+  const findRow = document.createElement('div');
+  findRow.style.cssText = 'display:flex;align-items:center;gap:4px';
+  const findInput = document.createElement('input');
+  findInput.type = 'text';
+  findInput.placeholder = 'Find';
+  findInput.style.cssText = inputCss;
+  const count = document.createElement('span');
+  count.style.cssText = 'min-width:64px;text-align:center;color:var(--ftr10-text-muted, #888);font-size:11px';
+  const prevBtn = document.createElement('button');
+  prevBtn.textContent = '\u2191'; prevBtn.title = 'Previous (Shift+Enter)'; prevBtn.style.cssText = btnCss;
+  const nextBtn = document.createElement('button');
+  nextBtn.textContent = '\u2193'; nextBtn.title = 'Next (Enter)'; nextBtn.style.cssText = btnCss;
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = '\u2715'; closeBtn.title = 'Close (Esc)'; closeBtn.style.cssText = btnCss;
+  findRow.append(findInput, count, prevBtn, nextBtn, closeBtn);
+
+  const replaceRow = document.createElement('div');
+  replaceRow.style.cssText = 'display:none;align-items:center;gap:4px';
+  const replaceInput = document.createElement('input');
+  replaceInput.type = 'text';
+  replaceInput.placeholder = 'Replace';
+  replaceInput.style.cssText = inputCss;
+  const replaceBtn = document.createElement('button');
+  replaceBtn.textContent = 'Replace'; replaceBtn.style.cssText = btnCss;
+  const replaceAllBtn = document.createElement('button');
+  replaceAllBtn.textContent = 'All'; replaceAllBtn.style.cssText = btnCss;
+  replaceRow.append(replaceInput, replaceBtn, replaceAllBtn);
+
+  bar.append(findRow, replaceRow);
+  document.body.appendChild(bar);
+
+  const updateCount = () => {
+    // `matches`/`index` live on the editor's search module, NOT on the Muya
+    // instance itself (muya.search()/find()/replace() are thin delegates).
+    // Reading muya.matches gives undefined and the counter never updates.
+    const sm = (muya as any)?.editor?.searchModule;
+    const matches = sm?.matches ?? [];
+    const idx = sm?.index ?? -1;
+    count.textContent = matches.length
+      ? `${Math.min(idx + 1, matches.length)} of ${matches.length}`
+      : (findInput.value ? 'No results' : '');
+  };
+
+  const runSearch = (selectHighlight = false) => {
+    if (!muya) return;
+    muya.search(findInput.value, { selectHighlight });
+    updateCount();
+  };
+  const step = (dir: 'next' | 'previous') => {
+    if (!muya || !findInput.value) return;
+    muya.find(dir);
+    updateCount();
+  };
+
+  findInput.addEventListener('input', () => runSearch(false));
+  findInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); step(e.shiftKey ? 'previous' : 'next'); }
+    else if (e.key === 'Escape') { e.preventDefault(); close(); }
+  });
+  replaceInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); doReplace(false); }
+    else if (e.key === 'Escape') { e.preventDefault(); close(); }
+  });
+  prevBtn.addEventListener('mousedown', (e) => { e.preventDefault(); step('previous'); });
+  nextBtn.addEventListener('mousedown', (e) => { e.preventDefault(); step('next'); });
+  closeBtn.addEventListener('mousedown', (e) => { e.preventDefault(); close(); });
+
+  function doReplace(all: boolean) {
+    if (!muya || !findInput.value) return;
+    // muya replaces against the CURRENT match set, so make sure it is fresh
+    // (the user may have edited the find term without pressing Enter).
+    muya.search(findInput.value, { selectHighlight: false });
+    muya.replace(replaceInput.value, { isSingle: !all, isRegexp: false });
+    updateCount();
+  }
+  replaceBtn.addEventListener('mousedown', (e) => { e.preventDefault(); doReplace(false); });
+  replaceAllBtn.addEventListener('mousedown', (e) => { e.preventDefault(); doReplace(true); });
+
+  function open(withReplace: boolean) {
+    bar.style.display = 'flex';
+    replaceRow.style.display = withReplace ? 'flex' : 'none';
+    // Seed from the selection when there is one — matches editor conventions.
+    const sel = window.getSelection();
+    const term = sel ? sel.toString().trim() : '';
+    if (term && !term.includes('\n')) findInput.value = term;
+    findInput.focus();
+    findInput.select();
+    if (findInput.value) runSearch(false);
+  }
+  function close() {
+    bar.style.display = 'none';
+    // Clear highlights so stale matches don't linger over the document.
+    muya?.search('');
+    count.textContent = '';
+    muya?.focus?.();
+  }
+
+  findBar = { open, close, isOpen: () => bar.style.display !== 'none' };
 }
-// Replace: open a prompt for find/replace terms, run muya's search + replace.
-function replacePrompt() {
-  if (!muya) return;
-  const sel = window.getSelection();
-  const find = (sel ? sel.toString() : '') || window.prompt('Find:') || '';
-  if (!find) return;
-  const replace = window.prompt(`Replace "${find}" with:`, '') || '';
-  muya.search(find);
-  muya.replace(replace, { isSingle: false, isRegexp: false });
+
+// Ctrl/Cmd+F and Ctrl/Cmd+H are handled in the webview itself: the webview owns
+// keyboard focus, so binding them via package.json contributes.keybindings would
+// not fire while the user is typing in the editor.
+function setupFindKeys() {
+  window.addEventListener('keydown', (e) => {
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && !e.shiftKey && !e.altKey && (e.key === 'f' || e.key === 'F')) {
+      e.preventDefault(); e.stopPropagation();
+      findBar?.open(false);
+    } else if (mod && !e.shiftKey && !e.altKey && (e.key === 'h' || e.key === 'H')) {
+      e.preventDefault(); e.stopPropagation();
+      findBar?.open(true);
+    } else if (e.key === 'Escape' && findBar?.isOpen()) {
+      e.preventDefault();
+      findBar.close();
+    }
+  }, true);
 }
+
+function findSelection() { findBar?.open(false); }
+function replacePrompt() { findBar?.open(true); }
 
 const MENU: MenuItem[] = [
   // Edit submenu
@@ -274,7 +431,7 @@ const MENU: MenuItem[] = [
     { label: 'Delete Paragraph', shortcut: 'Ctrl+Shift+D', action: () => muya?.deleteParagraph() },
     { label: '', sep: true },
     { label: 'Find', shortcut: 'Ctrl+F', action: findSelection },
-    { label: 'Replace', shortcut: 'Ctrl+R', action: replacePrompt },
+    { label: 'Replace', shortcut: 'Ctrl+H', action: replacePrompt },
   ]},
   // Paragraph submenu
   { label: 'Paragraph', submenu: [
@@ -521,6 +678,8 @@ function setupContextMenu() {
 }
 
 setupContextMenu();
+setupFindBar();
+setupFindKeys();
 
 // ---------------------------------------------------------------------------
 // Keep muya's floating menus inside the panel.

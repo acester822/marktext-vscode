@@ -53,11 +53,16 @@
 
     /* Hand-drawn (Excalidraw-ish) task-list checkbox artwork, used as
        mask-images below so the marker still takes its colour from the theme.
-       Each shape is a few wobbly bezier strokes with slight corner overshoot
-       so it reads as sketched rather than geometric. */
-    --mtx-checkbox-box: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cg fill=%22none%22 stroke=%22%23fff%22 stroke-width=%221.9%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M4.6 3.3 C8.5 2.7, 15.2 2.9, 19.7 3.5%22/%3E%3Cpath d=%22M20.4 4.1 C21.1 8.4, 20.8 15.1, 20.3 19.6%22/%3E%3Cpath d=%22M19.6 20.4 C15.3 21.2, 8.6 20.9, 4.2 20.4%22/%3E%3Cpath d=%22M3.5 19.6 C2.8 15.4, 3.0 8.3, 3.6 3.9%22/%3E%3C/g%3E%3C/svg%3E");
-    --mtx-checkbox-tick: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cg fill=%22none%22 stroke=%22%23fff%22 stroke-width=%222.6%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M5.2 12.4 C7.0 14.2, 8.4 16.0, 9.9 18.1%22/%3E%3Cpath d=%22M9.5 18.3 C12.2 13.6, 15.2 9.4, 19.1 5.6%22/%3E%3C/g%3E%3C/svg%3E");
+       Wobbly bezier sides with generously rounded corners — the marker renders
+       at ~18px, so subtle rounding just reads as a plain square.
+       The checked state uses a FILLED silhouette rather than the outline: at
+       this size a stroke-only shape tinted with the accent reads as nothing but
+       a coloured border, which is indistinguishable from unchecked. */
+    --mtx-checkbox-box: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%23fff%22%20stroke-width%3D%222.1%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M7.4%203.2%20C10.6%202.8%2C%2014.2%202.9%2C%2017.0%203.3%20C19.6%203.7%2C%2020.6%205.1%2C%2020.8%207.3%20C21.1%2010.4%2C%2021.0%2014.1%2C%2020.6%2016.9%20C20.3%2019.4%2C%2019.0%2020.5%2C%2016.6%2020.7%20C13.4%2021.0%2C%209.6%2020.9%2C%206.9%2020.6%20C4.5%2020.3%2C%203.4%2019.0%2C%203.2%2016.7%20C2.9%2013.5%2C%203.0%209.7%2C%203.4%207.0%20C3.7%204.6%2C%205.0%203.5%2C%207.4%203.2%20Z%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+    --mtx-checkbox-box-filled: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20fill%3D%22%23fff%22%20stroke%3D%22%23fff%22%20stroke-width%3D%222.1%22%20stroke-linejoin%3D%22round%22%20d%3D%22M7.4%203.2%20C10.6%202.8%2C%2014.2%202.9%2C%2017.0%203.3%20C19.6%203.7%2C%2020.6%205.1%2C%2020.8%207.3%20C21.1%2010.4%2C%2021.0%2014.1%2C%2020.6%2016.9%20C20.3%2019.4%2C%2019.0%2020.5%2C%2016.6%2020.7%20C13.4%2021.0%2C%209.6%2020.9%2C%206.9%2020.6%20C4.5%2020.3%2C%203.4%2019.0%2C%203.2%2016.7%20C2.9%2013.5%2C%203.0%209.7%2C%203.4%207.0%20C3.7%204.6%2C%205.0%203.5%2C%207.4%203.2%20Z%22%2F%3E%3C%2Fsvg%3E");
+    --mtx-checkbox-tick: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%23fff%22%20stroke-width%3D%223.4%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M5.0%2012.6%20C6.9%2014.3%2C%208.3%2016.0%2C%209.8%2018.2%22%2F%3E%3Cpath%20d%3D%22M9.4%2018.4%20C12.2%2013.7%2C%2015.4%209.3%2C%2019.4%205.4%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
 }
+
 
 .mu-container {
     max-width: 100%;
@@ -122,6 +127,11 @@ li.mu-task-list-item > span.mu-checkbox-checked::before {
     background-color: var(--theme-color);
     border-color: transparent;
 
+    /* Solid silhouette, not the outline: an 18px stroke-only box tinted with
+       the accent is indistinguishable from the unchecked state. */
+    -webkit-mask-image: var(--mtx-checkbox-box-filled);
+    mask-image: var(--mtx-checkbox-box-filled);
+
     /* Core adds a glow sized for a circle; it looks wrong under a square. */
     box-shadow: none;
 }
@@ -130,12 +140,15 @@ li.mu-task-list-item > span.mu-checkbox-checked::before {
    sketched check mask so it matches the box. */
 li.mu-task-list-item > input::after,
 li.mu-task-list-item > span.mu-task-list-checkbox::after {
-    top: 0;
-    left: 0;
+    /* Sit exactly on top of the ::before box (which is 18px at -2,-2) so the
+       tick is centred in the square rather than offset into a corner. */
+    top: -2px;
+    left: -2px;
+    z-index: 1;
 
     box-sizing: border-box;
-    width: 14px;
-    height: 14px;
+    width: 18px;
+    height: 18px;
 
     background-color: var(--editor-bg-color);
     border: none;
@@ -158,4 +171,33 @@ li.mu-task-list-item > span.mu-task-list-checkbox::after {
 li.mu-task-list-item > input.mu-checkbox-checked::after,
 li.mu-task-list-item > span.mu-checkbox-checked::after {
     transform: scale(1);
+}
+
+/* ---------------------------------------------------------------------------
+   Inline code.
+
+   muya core paints inline code with `--code-block-bg-color`, a translucent
+   grey (rgb(0 0 0 / 3%)). Against a rich VS Code theme that all but vanishes,
+   which defeats using `code spans` as visual landmarks when scanning a long
+   document.
+
+   Keep the translucency (so it still sits on the theme background rather than
+   punching a hole in it) but tint it with the accent: background from
+   --ftr10-accent-2, text from --ftr10-accent-5. color-mix keeps the fill
+   translucent while following whatever the accent resolves to; the fallbacks
+   cover themes that don't define the FTR10 palette.
+   --------------------------------------------------------------------------- */
+code.mu-inline-rule {
+    color: var(--ftr10-accent-5, var(--vscode-textPreformat-foreground, var(--editor-color)));
+    background-color: color-mix(
+        in srgb,
+        var(--ftr10-accent-2, var(--vscode-textPreformat-background, #808080)) 22%,
+        transparent
+    );
+    border: 1px solid color-mix(
+        in srgb,
+        var(--ftr10-accent-2, var(--vscode-textPreformat-background, #808080)) 38%,
+        transparent
+    );
+    border-radius: 4px;
 }

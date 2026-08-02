@@ -34,3 +34,44 @@
 @import '../../vendor/muya/src/ui/tableDragBar/index.css';
 @import '../../vendor/muya/src/ui/tableRowColumMenu/index.css';
 @import '../../vendor/muya/src/ui/tooltip/index.css';
+
+/* ---------------------------------------------------------------------------
+   Editor width.
+
+   muya ships a fixed, centered editing column: `.mu-container` is
+   `max-width: var(--editor-area-width, 800px); margin: 0 auto` (blockSyntax.css),
+   with `--editor-area-width: 800px` (index.css). Minus the 50px side padding
+   that leaves a ~700px text measure, which wastes the panel in a VS Code
+   webview where the user sizes the pane themselves.
+
+   Redefine the variable rather than fighting the rule, so every consumer of
+   `--editor-area-width` (e.g. the inline-math `max-width: calc(... - 100px)`)
+   stays consistent.
+   --------------------------------------------------------------------------- */
+:root {
+    --editor-area-width: 100%;
+}
+
+.mu-container {
+    max-width: 100%;
+}
+
+/* ---------------------------------------------------------------------------
+   Tables.
+
+   `.mu-table-inner` has no width, so the table shrink-wraps its content. Inside
+   the (previously narrow) column that read as right-aligned once the content
+   grew. Center the table block and let it use the available width.
+   --------------------------------------------------------------------------- */
+.mu-container .mu-table {
+    display: block;
+    overflow-x: auto;
+}
+
+.mu-container .mu-table-inner {
+    width: auto;
+    min-width: 0;
+    max-width: 100%;
+    margin-right: auto;
+    margin-left: auto;
+}

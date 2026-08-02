@@ -12,7 +12,6 @@
     "isolatedModules": true,
     "noEmit": true,
     "types": ["vscode", "node"],
-    "baseUrl": ".",
     "paths": {
       "@muyajs/core": ["./vendor/muya/lib/types/index.d.ts"]
     }

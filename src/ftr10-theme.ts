@@ -144,8 +144,8 @@ export const FTR10_MUYA_BRIDGE_CSS = `
    code.mu-inline-rule rule is plain (border-radius:3px, no border), so without
    !important it would silently override our accent pill. The bridge is also
    re-applied last on every theme/palette change, so !important here is the one
-   place guaranteed to win. Radius hardcoded to a drastic 16px so it's
-   unmistakable the value is applied; once confirmed, tune it down. */
+   place guaranteed to win. Radius set to a comfortable 8px (tuned down from 16px
+   after confirming the override works). */
 #app .mu-container :not(pre) > code.mu-inline-rule {
   color: var(--ftr10-accent-5, var(--vscode-textPreformat-foreground, inherit)) !important;
   background: color-mix(
@@ -158,7 +158,7 @@ export const FTR10_MUYA_BRIDGE_CSS = `
     var(--ftr10-accent-2, var(--vscode-textPreformat-background, #808080)) 65%,
     transparent
   ) !important;
-  border-radius: 16px !important;
+  border-radius: 8px !important;
   font-family: var(--ftr10-code-font, inherit) !important;
 }
 #app .mu-container pre {

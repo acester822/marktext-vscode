@@ -159,12 +159,12 @@ export const FTR10_MUYA_BRIDGE_CSS = `
     transparent
   ) !important;
   border-radius: 8px !important;
-  /* muya sets font-size:0.8em, which makes the bordered box taller than the
-     line so it overhangs top and bottom. Match the surrounding text size so the
-     pill box height equals the glyph height, then middle-align flush. */
-  font-size: 1em !important;
+  /* muya sets font-size:0.8em (taller box, overhangs). Match text at 0.95em and
+     drop vertical padding to ~0 so the 1px border hugs the glyphs — keeps the
+     pill just tall enough for the border without extra bulk. */
+  font-size: 0.95em !important;
   font-family: var(--ftr10-code-font, inherit) !important;
-  padding: 0.05em 0.4em !important;
+  padding: 0 0.4em !important;
   line-height: 1 !important;
   /* middle centers the box; the line's middle sits slightly high, so a small
      negative nudge lands the pill on the glyph center. */

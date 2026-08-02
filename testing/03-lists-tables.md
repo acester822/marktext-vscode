@@ -10,7 +10,6 @@ Asterisks and plus work too:
 
 * One
 * Two
-
 + Alpha
 + Beta
 
@@ -23,8 +22,8 @@ Asterisks and plus work too:
 Numbers don't need to be sequential (Markdown normalizes them):
 
 3. Foo
-1. Bar
-1. Baz
+4. Bar
+5. Baz
 
 ## Nested lists
 
@@ -33,7 +32,6 @@ Numbers don't need to be sequential (Markdown normalizes them):
     - Level 3 item
   - Back to level 2
 - Level 1 item again
-
 1. First top
    1. Nested ordered a
    2. Nested ordered b
@@ -67,22 +65,22 @@ Numbers don't need to be sequential (Markdown normalizes them):
 
 Simple table:
 
-| Name  | Role        |
-|-------|-------------|
-| Alice | Engineer    |
-| Bob   | Designer    |
+| Name  | Role     |
+| ----- | -------- |
+| Alice | Engineer |
+| Bob   | Designer |
 
 Table with alignment:
 
 | Left | Center | Right |
-|:-----|:------:|------:|
+|:---- |:------:| -----:|
 | a    | b      | c     |
 | 1    | 2      | 3     |
 
 Table with inline content:
 
-| Feature | Status | Notes |
-|---------|:------:|-------|
-| Math    | ✅     | `$E=mc^2$` |
-| Tables  | ✅     | **works** |
-| Diagrams| ❌     | if unsupported |
+| Feature  | Status | Notes          |
+| -------- |:------:| -------------- |
+| Math     | ✅      | `$E=mc^2$`     |
+| Tables   | ✅      | **works**      |
+| Diagrams | ❌      | if unsupported |

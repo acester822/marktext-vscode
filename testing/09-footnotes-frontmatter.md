@@ -21,7 +21,8 @@ muya is booted with `footnote: true`. This sentence has a footnote reference.[^1
 A second one[^longnote] appears here too.
 
 [^1]: This is the first footnote text.
-[^longnote]: Here's one with multiple blocks.
+
+    [^longnote]: Here's one with multiple blocks.
 
     Subsequent paragraphs are indented to show they belong to the same footnote.
 

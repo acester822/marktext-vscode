@@ -30,7 +30,7 @@ Setext H2
 
 ### Heading with a [link](https://example.com)
 
-## Heading with trailing hashes #
+## Heading with trailing hashes
 
 ---
 

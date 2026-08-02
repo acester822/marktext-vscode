@@ -158,7 +158,7 @@ export const FTR10_MUYA_BRIDGE_CSS = `
     var(--ftr10-accent-2, var(--vscode-textPreformat-background, #808080)) 65%,
     transparent
   ) !important;
-  border-radius: 8px !important;
+  border-radius: 6px !important;
   /* muya sets font-size:0.8em (taller box, overhangs). Match text at 0.95em and
      drop vertical padding to ~0 so the 1px border hugs the glyphs — keeps the
      pill just tall enough for the border without extra bulk. */

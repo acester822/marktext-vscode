@@ -36,7 +36,9 @@ Images. Inline image syntax in the WYSIWYG editor:
 Horizontal rules below (three styles):
 
 - - -
+
 ***
+
 ___
 
 ---

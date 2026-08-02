@@ -20,17 +20,17 @@ can't: how markdown actually parses and renders in the WYSIWYG webview.**
 
 ## Test documents
 
-| File | Feature area | What to check |
-|------|--------------|---------------|
-| [01-basics.md](./01-basics.md) | Core markdown | Headings, bold/italic/strike, inline & fenced code, links, images, HR, blockquote, lists, task lists |
-| [02-formatting.md](./02-formatting.md) | Inline formatting | Superscript/subscript, emoji, code spans, links, images, strikethrough, gitlab-compat strike |
-| [03-lists-tables.md](./03-lists-tables.md) | Lists & tables | Ordered/unordered/task lists, nested & multi-paragraph items, GFM tables + alignment |
-| [04-headings.md](./04-headings.md) | Headings | H1–H6, setext, heading with inline formatting |
-| [05-code-blocks.md](./05-code-blocks.md) | Code blocks | Fenced w/ language, line numbers, indented (4-space) code, inline code, Prism languages |
-| [06-math.md](./06-math.md) | Math (KaTeX) | Inline `$…$`, block `$$…$$`, `math` fence, super/subscript |
-| [07-diagrams.md](./07-diagrams.md) | Diagrams | mermaid, plantuml, vega-lite, flowchart, sequence (muya's supported set) |
-| [08-excalidraw.md](./08-excalidraw.md) | Excalidraw | ` ```excalidraw ` block renders inline SVG + Edit button |
-| [09-footnotes-frontmatter.md](./09-footnotes-frontmatter.md) | Footnotes & front matter | YAML front matter, footnotes, task lists |
+| File                                                         | Feature area             | What to check                                                                                        |
+| ------------------------------------------------------------ | ------------------------ | ---------------------------------------------------------------------------------------------------- |
+| [01-basics.md](./01-basics.md)                               | Core markdown            | Headings, bold/italic/strike, inline & fenced code, links, images, HR, blockquote, lists, task lists |
+| [02-formatting.md](./02-formatting.md)                       | Inline formatting        | Superscript/subscript, emoji, code spans, links, images, strikethrough, gitlab-compat strike         |
+| [03-lists-tables.md](./03-lists-tables.md)                   | Lists & tables           | Ordered/unordered/task lists, nested & multi-paragraph items, GFM tables + alignment                 |
+| [04-headings.md](./04-headings.md)                           | Headings                 | H1–H6, setext, heading with inline formatting                                                        |
+| [05-code-blocks.md](./05-code-blocks.md)                     | Code blocks              | Fenced w/ language, line numbers, indented (4-space) code, inline code, Prism languages              |
+| [06-math.md](./06-math.md)                                   | Math (KaTeX)             | Inline `$…$`, block `$$…$$`, `math` fence, super/subscript                                           |
+| [07-diagrams.md](./07-diagrams.md)                           | Diagrams                 | mermaid, plantuml, vega-lite, flowchart, sequence (muya's supported set)                             |
+| [08-excalidraw.md](./08-excalidraw.md)                       | Excalidraw               | ` ```excalidraw ` block renders inline SVG + Edit button                                             |
+| [09-footnotes-frontmatter.md](./09-footnotes-frontmatter.md) | Footnotes & front matter | YAML front matter, footnotes, task lists                                                             |
 
 ## Not supported by this extension (don't expect these)
 

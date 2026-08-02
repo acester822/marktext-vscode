@@ -165,7 +165,7 @@ export function activate(context: vscode.ExtensionContext) {
 function openEditorForDoc(doc: vscode.TextDocument, context: vscode.ExtensionContext) {
   const uri = doc.uri;
   activeUri = uri.toString();
-  const column = vscode.ViewColumn.Beside;
+  const column = vscode.ViewColumn.Active;
 
   if (activePanel) {
     activePanel.reveal(column);

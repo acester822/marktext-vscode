@@ -3726,7 +3726,7 @@ var Ci = class extends xt {
 				e.key === j.ArrowUp && i.offset !== 0 && this.setCursor(0, 0, !0);
 				return;
 			}
-			l = n, u = n.text.length;
+			l = n, u = Math.min(i.offset, n.text.length); // FTR10 PATCH B (see vendor/muya/PATCHES.md)
 		} else if (e.key === j.ArrowDown || e.key === p && i.offset === this.text.length) {
 			if (e.preventDefault(), e.stopPropagation(), r) l = r;
 			else if (this.text.length > 0) {
@@ -3737,7 +3737,7 @@ var Ci = class extends xt {
 				}, t = N.loadBlock(e.name).create(c, e);
 				(m = this.scrollPage) == null || m.append(t, "user"), l = t.children.head;
 			}
-			l && (u = Kt(0, l, e));
+			l && (u = Math.min(i.offset, l.text.length)); // FTR10 PATCH B (see vendor/muya/PATCHES.md)
 		}
 		l && (this.update(), l.setCursor(u, u, !0));
 	}
@@ -13630,6 +13630,11 @@ var tf = class t extends Vi {
 	}
 	_handleBackspaceInList() {
 		let e = this.parent, t = e.parent, n = t.parent;
+		// FTR10 PATCH A (see vendor/muya/PATCHES.md): degrade before removing.
+		if (this.isCollapsed && this._getUnindentType() != null) {
+			this._unindentListItem(this._getUnindentType());
+			return;
+		}
 		if (!e.isFirstChild()) return this._handleBackspaceInParagraph();
 		if (t.isOnlyChild()) t.forEach((e, t) => {
 			var r;

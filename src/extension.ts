@@ -235,6 +235,19 @@ function switchToWysiwyg() {
   });
 }
 
+// Self-managed context key: true when the active tab is a MarkText WYSIWYG
+// editor. The built-in `editorId` when-context is useless here — a Monaco tab's
+// editorId is 'default' and a custom-editor tab's editorId is unset, so
+// `editorId == <viewType>` is never true and `editorId != <viewType>` is true in
+// BOTH modes (which is why the same icon showed and the wrong command fired).
+// A custom editor's tab input is a TabInputCustom whose `viewType` is our id.
+function updateWysiwygContextKey() {
+  const tab = vscode.window.tabGroups.activeTabGroup?.activeTab;
+  const input = tab?.input;
+  const isWysiwyg = input instanceof vscode.TabInputCustom && input.viewType === VIEW_TYPE;
+  vscode.commands.executeCommand('setContext', 'marktext.editor.isWysiwyg', isWysiwyg);
+}
+
 function updateEditorAssociations() {
   const cfg = vscode.workspace.getConfiguration('marktext.editor');
   const wantDefault = cfg.get<boolean>('defaultForMarkdown', false);
@@ -269,6 +282,7 @@ export function activate(context: vscode.ExtensionContext) {
           const existing = sessions.get(document.uri.toString());
           if (existing) { existing.panel = panel; existing.bind(document); }
           else sessions.set(document.uri.toString(), createSession(panel, document.uri));
+          updateWysiwygContextKey();
         },
       },
       {
@@ -307,8 +321,28 @@ export function activate(context: vscode.ExtensionContext) {
       await context.workspaceState.update('devMode', devMode);
       vscode.window.showInformationMessage(`MarkText dev mode: ${devMode ? 'ON' : 'OFF'} (reload webview to apply).`);
     }),
-    vscode.commands.registerCommand('marktext-editor.useClassic', () => switchToClassic()),
-    vscode.commands.registerCommand('marktext-editor.useWysiwyg', () => switchToWysiwyg()),
+    vscode.commands.registerCommand('marktext-editor.useClassic', () => {
+      const tab = vscode.window.tabGroups.activeTabGroup?.activeTab;
+      const isWysiwyg = tab?.input instanceof vscode.TabInputCustom && (tab.input as vscode.TabInputCustom).viewType === VIEW_TYPE;
+      if (!isWysiwyg) { vscode.window.showInformationMessage('MarkText: this file is already in the Classic editor.'); return; }
+      switchToClassic();
+    }),
+    vscode.commands.registerCommand('marktext-editor.useWysiwyg', () => {
+      const tab = vscode.window.tabGroups.activeTabGroup?.activeTab;
+      const isWysiwyg = tab?.input instanceof vscode.TabInputCustom && (tab.input as vscode.TabInputCustom).viewType === VIEW_TYPE;
+      if (isWysiwyg) { vscode.window.showInformationMessage('MarkText: this file is already in the WYSIWYG editor.'); return; }
+      switchToWysiwyg();
+    }),
+  );
+
+  // Keep our self-managed "active editor is WYSIWYG" context key in sync so the
+  // title-bar toggle shows the right icon. Resolve runs on open; this covers
+  // focus changes (clicking between a MarkText tab and a Monaco tab, split view).
+  updateWysiwygContextKey();
+  context.subscriptions.push(
+    vscode.window.tabGroups.onDidChangeTabGroups(() => updateWysiwygContextKey()),
+    vscode.window.tabGroups.onDidChangeTabs(() => updateWysiwygContextKey()),
+    vscode.window.onDidChangeActiveTextEditor(() => updateWysiwygContextKey()),
   );
 
   log('FTR10 Architect palette:', isFtr10Present() ? FTR10_COLORS_CSS_PATH : 'not installed (using bundled fallback)');

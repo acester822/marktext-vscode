@@ -196,18 +196,7 @@ li.mu-task-list-item > span.mu-checkbox-checked::after {
    cover themes that don't define the FTR10 palette.
    --------------------------------------------------------------------------- */
 code.mu-inline-rule {
-    color: var(--ftr10-accent-5, var(--vscode-textPreformat-foreground, var(--editor-color)));
-    background-color: color-mix(
-        in srgb,
-        var(--ftr10-accent-2, var(--vscode-textPreformat-background, #808080)) 22%,
-        transparent
-    );
-    border: 1.5px solid color-mix(
-        in srgb,
-        var(--ftr10-accent-2, var(--vscode-textPreformat-background, #808080)) 55%,
-        transparent
-    );
-    /* Pronounced rounded squircle, matching the task-list checkboxes, so the
-       accent border reads clearly at the small font size inline code uses. */
-    border-radius: 10px;
+    /* Accent pill background/color/border/radius are applied in the FTR10 theme
+       bridge (src/ftr10-theme.ts) because that layer is injected AFTER this file
+       and wins on specificity. Setting them here would be silently overridden. */
 }

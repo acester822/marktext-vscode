@@ -18,5 +18,3 @@
 
 - [ ] Cursor behavior needs further refining, if you are going thru a doc in the editor with arrows, the positioning in between lines needs to match up better to the rendered content, aka I navigate down, the cursor should show up the line down right below where I was editing
 - [ ] Degrading: If I try and degrade a bullet, hitting backspace does not work, it removes the bullet, a backspace should signal a bullet degrade if one is available and if not it would then remove the bullet. Using shift + tab did work to degrade as an FYI
-
-

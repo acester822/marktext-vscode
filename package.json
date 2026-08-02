@@ -91,20 +91,23 @@
     "build:web": "esbuild webview/src/muya-styles.css --bundle --loader:.css=css --loader:.woff=dataurl --loader:.woff2=dataurl --loader:.ttf=dataurl --loader:.svg=dataurl --loader:.png=dataurl --outfile=out/webview/main.css --define:process.env.NODE_ENV='\"production\"' && esbuild webview/src/main.ts --bundle --format=iife --outfile=out/webview/main.js --sourcemap --alias:@muyajs/core=./vendor/muya/lib/es/index.js --loader:.png=dataurl --loader:.svg=dataurl --loader:.woff=dataurl --loader:.woff2=dataurl --loader:.ttf=dataurl --loader:.css=empty --define:process.env.NODE_ENV='\"production\"'",
     "build:editor": "esbuild webview/src/excalidraw-editor.tsx --bundle --format=iife --outfile=out/webview/excalidraw-editor.js --sourcemap --loader:.css=empty --jsx=automatic --define:process.env.NODE_ENV='\"production\"'",
     "build": "npm run build:host && npm run build:web && npm run build:editor",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "watch": "npm run build:host -- --watch=forever & npm run build:web -- --watch=forever & npm run build:editor -- --watch=forever & wait",
     "dev": "npm run watch",
     "vscode:prepublish": "npm run build"
   },
   "devDependencies": {
     "@excalidraw/excalidraw": "^0.18.1",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
+    "@types/node": "^20.19.43",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
-    "@types/node": "^20.19.43",
     "@types/vscode": "^1.85.0",
     "esbuild": "^0.21.5",
     "jsdom": "^30.0.1",
-    "typescript": "^5.4.5"
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.4.5",
+    "vitest": "^3.2.7"
   }
 }

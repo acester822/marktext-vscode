@@ -96,3 +96,18 @@ file dialog (host side) because the webview has no filesystem access.
 - No save-on-close sequencing beyond VS Code's normal document save; the host
   does not auto-save the `.md` on panel dispose.
 - `workspace` trust / restricted mode and CSP are not yet hardened.
+
+## Excalidraw diagrams
+
+A fenced `excalidraw` code block renders inline as an SVG in the WYSIWYG view.
+Because muya has no built-in `excalidraw` diagram type, detection is done in the
+webview by reading the block's language label — no muya fork changes required.
+
+```excalidraw
+{"elements":[{"type":"rectangle","id":"a","x":0,"y":0,"width":100,"height":60}],"appState":{}}
+```
+
+Each rendered diagram shows an **Edit diagram** button (top-right). Clicking it
+opens a standalone Excalidraw editor in a new VS Code window. Edits autosave back
+into the ` ```excalidraw ` block of the source `.md` (debounced ~1s) and the
+inline SVG refreshes. No inline editing is added — the editor is always external.

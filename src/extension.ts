@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { buildFtr10Css, isFtr10Present, watchFtr10Theme, FTR10_COLORS_CSS_PATH } from './ftr10-theme';
+import { openExcalidrawEditor } from './excalidraw-editor';
 
 // ---------- message protocol (host <-> webview) ----------
 interface InitMsg { type: 'init'; markdown: string; theme: 'light' | 'dark'; uri: string; dev?: boolean; }
@@ -14,8 +15,9 @@ interface RequestImageMsg { type: 'requestWorkspaceImage'; requestId: number; }
 interface Ftr10CssMsg { type: 'ftr10Css'; css: string; }
 interface WorkspaceImageMsg { type: 'workspaceImage'; requestId: number; path: string | null; }
 interface ReloadMsg { type: 'reload'; }
+interface ExcalidrawEditMsg { type: 'excalidrawEdit'; uri: string; data: string; }
 type ToWebview = InitMsg | SetMarkdownMsg | ThemeMsg | WorkspaceImageMsg | ReloadMsg | Ftr10CssMsg;
-type FromWebview = ReadyMsg | ChangeMsg | OpenExternalMsg | RequestImageMsg;
+type FromWebview = ReadyMsg | ChangeMsg | OpenExternalMsg | RequestImageMsg | ExcalidrawEditMsg;
 
 let activePanel: vscode.WebviewPanel | undefined;
 // Set synchronously just before we applyEdit for a webview-originated change,
@@ -208,6 +210,9 @@ function openEditorForDoc(doc: vscode.TextDocument, context: vscode.ExtensionCon
         break;
       case 'openExternal':
         try { vscode.env.openExternal(vscode.Uri.parse(msg.href)); } catch { /* ignore */ }
+        break;
+      case 'excalidrawEdit':
+        openExcalidrawEditor(vscode.Uri.parse(msg.uri), msg.data, context);
         break;
       case 'requestWorkspaceImage': {
         const requestId = msg.requestId;

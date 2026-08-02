@@ -25,8 +25,9 @@ import {
   zhCN,
 } from '@muyajs/core';
 import type { IMuyaOptions, ILocale } from '@muyajs/core';
+import { setExcalidrawPost, observeExcalidrawBlocks } from './excalidraw-render';
 
-// ---------- host <-> webview message protocol ----------
+// ---------- host <-> webview message protocol ---------
 type InitMsg = { type: 'init'; markdown: string; theme: 'light' | 'dark'; uri: string; dev?: boolean };
 type SetMarkdownMsg = { type: 'setMarkdown'; markdown: string };
 type ThemeMsg = { type: 'theme'; theme: 'light' | 'dark' };
@@ -37,14 +38,15 @@ type FromWebview =
   | { type: 'ready' }
   | { type: 'change'; markdown: string }
   | { type: 'openExternal'; href: string }
-  | { type: 'requestWorkspaceImage'; requestId: number };
+  | { type: 'requestWorkspaceImage'; requestId: number }
+  | { type: 'excalidrawEdit'; uri: string; data: string };
 
 const vscode = (window as any).acquireVsCodeApi ? (window as any).acquireVsCodeApi() : null;
 let dev = false;
 
 // Always-on build marker so we can confirm which bundle is actually running
 // in the webview (guards against a stale/cached build after reinstall).
-const BUILD_ID = '2026-07-31d';
+const BUILD_ID = '2026-08-01a-excalidraw';
 // eslint-disable-next-line no-console
 console.log(`[marktext-webview] build ${BUILD_ID} loaded`);
 
@@ -154,6 +156,10 @@ function boot(markdown: string, theme: 'light' | 'dark', uri: string) {
   muya.init();
   muya.on('json-change', debounceChange);
   muya.on('blur', () => debounceChange());
+  // Excalidraw: route edit-button clicks to the host and decorate any
+  // ```excalidraw blocks currently rendered (and on future re-renders).
+  setExcalidrawPost(post);
+  observeExcalidrawBlocks(uri, container);
   post({ type: 'ready' });
 }
 

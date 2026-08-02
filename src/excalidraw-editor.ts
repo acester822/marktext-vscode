@@ -11,10 +11,15 @@ const excalidrawPanels = new Map<string, vscode.WebviewPanel>();
 // fails; resolve the path relative to the extension root instead (node_modules
 // is always on disk in dev and packaged). Falls back to empty so the editor
 // still boots, just unstyled.
-function readExcalidrawCss(): string {
+//
+// The extensionRoot is passed in (from context.extensionUri) rather than read
+// from a module-scoped EXT_ROOT: esbuild renames/hides module-scoped lets when
+// bundling, so a `declare const EXT_ROOT` in this file would reference a
+// variable that does not actually exist at runtime.
+function readExcalidrawCss(extensionRoot: string): string {
   try {
     const cssPath = path.join(
-      EXT_ROOT,
+      extensionRoot,
       'node_modules',
       '@excalidraw',
       'excalidraw',
@@ -34,10 +39,6 @@ function getNonce(): string {
   for (let i = 0; i < 32; i++) text += chars[Math.floor(Math.random() * chars.length)];
   return text;
 }
-
-// EXT_ROOT is set by extension.ts's activate(); declared here so this module
-// (bundled into the same out/extension.js) can reach the install path.
-declare const EXT_ROOT: string;
 
 // Pull the ```excalidraw block out of a markdown document and replace it with
 // new scene JSON, preserving the fence + surrounding text. Returns the new
@@ -103,6 +104,10 @@ export function openExcalidrawEditor(
     scene = '{"elements":[],"appState":{}}';
   }
 
+  // Resolve paths from the extension context (NOT a module-scoped EXT_ROOT
+  // global, which esbuild renames and this file would not see).
+  const root = context.extensionUri.fsPath;
+
   const panel = vscode.window.createWebviewPanel(
     'marktextExcalidrawEditor',
     `Excalidraw — ${path.basename(uri.fsPath)}`,
@@ -112,7 +117,7 @@ export function openExcalidrawEditor(
       retainContextWhenHidden: true,
       // Only the editor JS is loaded via asWebviewUri (the Excalidraw CSS is
       // inlined), so `out` is the sole resource root we need.
-      localResourceRoots: [vscode.Uri.file(path.join(EXT_ROOT, 'out'))],
+      localResourceRoots: [vscode.Uri.file(path.join(root, 'out'))],
     },
   );
   excalidrawPanels.set(key, panel);
@@ -122,7 +127,7 @@ export function openExcalidrawEditor(
 
   const nonce = getNonce();
   const editorJs = panel.webview.asWebviewUri(
-    vscode.Uri.file(path.join(EXT_ROOT, 'out', 'webview', 'excalidraw-editor.js')),
+    vscode.Uri.file(path.join(root, 'out', 'webview', 'excalidraw-editor.js')),
   );
   const isDark =
     vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.Dark ||
@@ -132,7 +137,7 @@ export function openExcalidrawEditor(
   // contains no external asset references). This avoids serving it from
   // node_modules at runtime, which breaks in code-server / remote where the
   // extension path does not map to node_modules.
-  const excalidrawCss = readExcalidrawCss();
+  const excalidrawCss = readExcalidrawCss(root);
 
   panel.webview.html = `<!doctype html>
 <html lang="en">

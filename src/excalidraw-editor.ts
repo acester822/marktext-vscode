@@ -110,12 +110,9 @@ export function openExcalidrawEditor(
     {
       enableScripts: true,
       retainContextWhenHidden: true,
-      localResourceRoots: [
-        vscode.Uri.file(path.join(EXT_ROOT, 'out')),
-        vscode.Uri.file(
-          path.join(EXT_ROOT, 'node_modules', '@excalidraw', 'excalidraw', 'dist'),
-        ),
-      ],
+      // Only the editor JS is loaded via asWebviewUri (the Excalidraw CSS is
+      // inlined), so `out` is the sole resource root we need.
+      localResourceRoots: [vscode.Uri.file(path.join(EXT_ROOT, 'out'))],
     },
   );
   excalidrawPanels.set(key, panel);

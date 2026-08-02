@@ -13,10 +13,6 @@
 
 import { exportToSvg } from '@excalidraw/excalidraw';
 
-// Per-block guard: map the original <pre> DOM node to a flag so a re-run (on
-// setMarkdown / theme change / mutation) reuses rather than stacks.
-const rendered = new WeakSet<Element>();
-
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
@@ -99,13 +95,15 @@ function parseScene(raw: string): {
   }
 }
 
+// muya re-renders (setMarkdown/theme) move the <pre> back out of our wrapper
+// and rebuild it, so a one-shot "decorated" guard would leave an orphaned
+// wrapper beside a raw, visible <pre>. To be safe we re-run every scan, but
+// idempotently: only rebuild what actually needs it, and never stack or loop.
 function decorateBlock(pre: HTMLElement, uri: string) {
-  if (rendered.has(pre)) return;
   // Only decorate genuine ```excalidraw blocks (detected from the language
   // label muya renders, since "excalidraw" is not a Prism language and gets no
   // `language-*` class).
   if (getBlockLang(pre) !== 'excalidraw') return;
-  rendered.add(pre);
 
   const code = getBlockCode(pre);
   if (!code) {
@@ -113,9 +111,33 @@ function decorateBlock(pre: HTMLElement, uri: string) {
     return;
   }
 
-  // Wrap the original <pre> so we can hide it and show the SVG + button.
-  // muya keeps the <pre> editable; we make it visually collapse and overlay
-  // the rendered diagram. This is non-destructive to muya's DOM.
+  // Garbage-collect orphaned wrappers from earlier muya re-renders (a wrapper
+  // whose <pre> is no longer inside it is dead — drop it).
+  document
+    .querySelectorAll<HTMLElement>('.mtx-excalidraw-block')
+    .forEach((w) => {
+      if (!w.querySelector('pre')) w.remove();
+    });
+
+  // This <pre> is already inside a live wrapper (muya keeps it there across a
+  // soft re-render). If the block's code hasn't changed since we last rendered,
+  // leave the DOM alone — re-rendering would append a fresh <svg>, mutating the
+  // tree and re-triggering the observer (infinite loop). Only refresh when the
+  // scene actually changed (e.g. after the standalone editor saves back).
+  const existingWrapper = pre.parentElement;
+  if (existingWrapper && existingWrapper.classList.contains('mtx-excalidraw-block')) {
+    const m = existingWrapper.querySelector<HTMLElement>('.mtx-excalidraw-mount');
+    if (m) {
+      const last = (m as any).__mtxCode;
+      if (last !== code) {
+        (m as any).__mtxCode = code;
+        void renderSvgInto(m, code);
+      }
+    }
+    return;
+  }
+
+  // Otherwise build the wrapper fresh.
   const wrapper = document.createElement('div');
   wrapper.className = 'mtx-excalidraw-block';
   wrapper.style.cssText = 'position:relative;margin:8px 0;';
@@ -129,6 +151,7 @@ function decorateBlock(pre: HTMLElement, uri: string) {
   const mount = document.createElement('div');
   mount.className = 'mtx-excalidraw-mount';
   mount.style.cssText = 'position:relative;';
+  (mount as any).__mtxCode = code;
   wrapper.appendChild(mount);
 
   // "Edit" button (top-right corner), styled from VS Code theme vars.
@@ -177,29 +200,20 @@ function decorateBlock(pre: HTMLElement, uri: string) {
   void renderSvgInto(mount, code);
 }
 
-// Scan all ```excalidraw code blocks currently in the DOM and decorate new ones.
+// Scan all ```excalidraw code blocks in the DOM and (re)decorate them.
+// decorateBlock rebuilds cleanly each time, so calling this both decorates a
+// fresh render AND repairs any stale wrapper an earlier muya re-render left
+// behind — no one-shot guard needed.
 export function renderExcalidrawBlocks(uri: string) {
   const blocks = document.querySelectorAll<HTMLElement>('pre.mu-code-block');
   blocks.forEach((pre) => decorateBlock(pre, uri));
 }
 
-// Force a re-render of every already-decorated ```excalidraw block: rebuild the
-// SVG from the code currently in the DOM. Used when the standalone editor
-// closes, so the inline diagram reflects the final saved scene. The decorated
-// WeakSet guard is bypassed by re-reading block code directly.
+// Force a re-render of every block's inline SVG after the standalone editor
+// closes, so the diagram reflects the saved scene. Reuses the full decorate
+// pass, which reads the current code and rebuilds the wrapper + SVG.
 export function refreshExcalidrawBlocks(uri: string) {
-  const blocks = document.querySelectorAll<HTMLElement>('pre.mu-code-block');
-  blocks.forEach((pre) => {
-    if (!rendered.has(pre)) return; // only refresh ones we decorated
-    const code = getBlockCode(pre);
-    if (!code) return;
-    // Re-render the SVG into the existing mount.
-    const wrapper = pre.parentElement; // .mtx-excalidraw-block
-    if (!wrapper) return;
-    const mount = wrapper.querySelector<HTMLElement>('.mtx-excalidraw-mount');
-    if (!mount) return;
-    void renderSvgInto(mount, code);
-  });
+  renderExcalidrawBlocks(uri);
 }
 
 // Shared async SVG render for both initial decoration and refresh.

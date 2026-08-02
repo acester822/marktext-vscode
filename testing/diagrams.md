@@ -16,7 +16,7 @@ graph TD;
 
 `mermaid {code_block=true}`
 
-```mermaid {code_block=true}
+```mermaid
 graph TD;
     A-->B;
     A-->C;
@@ -248,7 +248,7 @@ encoding:
 
 `vega-lite {hide=false}` + json
 
-```vega-lite {hide=false}
+```vega-lite
 "$schema": https://vega.github.io/schema/vega-lite/v3.json
 description: A simple bar chart with embedded data.
 data:
@@ -271,7 +271,7 @@ encoding:
 
 `vega-lite {cmd=false}`
 
-```vega-lite {cmd=false}
+```vega-lite
 "$schema": https://vega.github.io/schema/vega-lite/v3.json
 description: A simple bar chart with embedded data.
 data:

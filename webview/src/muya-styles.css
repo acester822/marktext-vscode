@@ -176,7 +176,9 @@ li.mu-task-list-item > span.mu-task-list-checkbox::after {
 
 li.mu-task-list-item > input.mu-checkbox-checked::after,
 li.mu-task-list-item > span.mu-checkbox-checked::after {
-    transform: scale(1);
+    /* The mask fills the 18px box at scale(1), which makes the tick overpower
+       the square. Scale it down so it sits comfortably inside the box. */
+    transform: scale(0.7);
 }
 
 /* ---------------------------------------------------------------------------

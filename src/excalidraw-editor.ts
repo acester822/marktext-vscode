@@ -89,6 +89,7 @@ export function openExcalidrawEditor(
   uri: vscode.Uri,
   data: string,
   context: vscode.ExtensionContext,
+  marktextPanel?: vscode.WebviewPanel,
 ) {
   const key = uri.toString();
   console.log('[marktext-host] openExcalidrawEditor called for', key);
@@ -123,6 +124,21 @@ export function openExcalidrawEditor(
   excalidrawPanels.set(key, panel);
   panel.onDidDispose(() => {
     excalidrawPanels.delete(key);
+    // The editor closed. Ask the MarkText panel to re-render its inline SVG so
+    // the saved scene (including any last-second edits flushed on close)
+    // appears in the WYSIWYG view. The panel's save-back already refreshes
+    // on file change, but this guarantees a refresh even when no change
+    // reached the file, and covers the debounce-window gap.
+    if (marktextPanel) {
+      try {
+        marktextPanel.webview.postMessage({
+          type: 'refreshExcalidraw',
+          uri: key,
+        } as any);
+      } catch {
+        /* panel may already be gone */
+      }
+    }
   });
 
   const nonce = getNonce();

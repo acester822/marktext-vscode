@@ -174,58 +174,80 @@ function decorateBlock(pre: HTMLElement, uri: string) {
   wrapper.appendChild(btn);
 
   // Render the SVG asynchronously (exportToSvg is async in 0.18.x).
-  (async () => {
-    try {
-      const scene = parseScene(code);
-      const dark = isDarkTheme();
-      const svg = await exportToSvg({
-        elements: scene.elements as any,
-        appState: {
-          ...(scene.appState ?? {}),
-          collaborators: undefined,
-          // Transparent so the themed container behind shows through.
-          viewBackgroundColor: 'transparent',
-          theme: dark ? 'dark' : 'light',
-          exportWithDarkMode: dark,
-        } as any,
-        files: scene.files as any,
-      });
-
-      // Strip the baked-in opaque background <rect> (Excalidraw always paints
-      // one, even when viewBackgroundColor is transparent).
-      svg
-        .querySelectorAll(
-          'rect[data-id="background"], rect.excalidraw__canvas-background',
-        )
-        .forEach((rect: SVGRectElement) => rect.remove());
-      // Fallback: drop any remaining no-stroke rect that just fills a colour.
-      svg.querySelectorAll('rect').forEach((rect: SVGRectElement) => {
-        const fill = (rect.getAttribute('fill') || '').toLowerCase();
-        const hasStroke = (rect.getAttribute('stroke') || '').trim();
-        if (!hasStroke && fill && fill !== 'none') {
-          rect.remove();
-        }
-      });
-
-      svg.setAttribute('width', '100%');
-      svg.style.maxWidth = '100%';
-      svg.style.height = 'auto';
-      svg.style.background = 'transparent';
-      svg.style.display = 'block';
-
-      mount.appendChild(svg);
-    } catch (err) {
-      mount.innerHTML = `<pre class="language-text"><code>${escapeHtml(
-        String((err as Error)?.message ?? err),
-      )}</code></pre>`;
-    }
-  })();
+  void renderSvgInto(mount, code);
 }
 
 // Scan all ```excalidraw code blocks currently in the DOM and decorate new ones.
 export function renderExcalidrawBlocks(uri: string) {
   const blocks = document.querySelectorAll<HTMLElement>('pre.mu-code-block');
   blocks.forEach((pre) => decorateBlock(pre, uri));
+}
+
+// Force a re-render of every already-decorated ```excalidraw block: rebuild the
+// SVG from the code currently in the DOM. Used when the standalone editor
+// closes, so the inline diagram reflects the final saved scene. The decorated
+// WeakSet guard is bypassed by re-reading block code directly.
+export function refreshExcalidrawBlocks(uri: string) {
+  const blocks = document.querySelectorAll<HTMLElement>('pre.mu-code-block');
+  blocks.forEach((pre) => {
+    if (!rendered.has(pre)) return; // only refresh ones we decorated
+    const code = getBlockCode(pre);
+    if (!code) return;
+    // Re-render the SVG into the existing mount.
+    const wrapper = pre.parentElement; // .mtx-excalidraw-block
+    if (!wrapper) return;
+    const mount = wrapper.querySelector<HTMLElement>('.mtx-excalidraw-mount');
+    if (!mount) return;
+    void renderSvgInto(mount, code);
+  });
+}
+
+// Shared async SVG render for both initial decoration and refresh.
+async function renderSvgInto(mount: HTMLElement, code: string) {
+  try {
+    const scene = parseScene(code);
+    const dark = isDarkTheme();
+    const svg = await exportToSvg({
+      elements: scene.elements as any,
+      appState: {
+        ...(scene.appState ?? {}),
+        collaborators: undefined,
+        viewBackgroundColor: 'transparent',
+        theme: dark ? 'dark' : 'light',
+        exportWithDarkMode: dark,
+      } as any,
+      files: scene.files as any,
+    });
+
+    // Strip the baked-in opaque background <rect> (Excalidraw always paints
+    // one, even when viewBackgroundColor is transparent).
+    svg
+      .querySelectorAll(
+        'rect[data-id="background"], rect.excalidraw__canvas-background',
+      )
+      .forEach((rect: SVGRectElement) => rect.remove());
+    // Fallback: drop any remaining no-stroke rect that just fills a colour.
+    svg.querySelectorAll('rect').forEach((rect: SVGRectElement) => {
+      const fill = (rect.getAttribute('fill') || '').toLowerCase();
+      const hasStroke = (rect.getAttribute('stroke') || '').trim();
+      if (!hasStroke && fill && fill !== 'none') {
+        rect.remove();
+      }
+    });
+
+    svg.setAttribute('width', '100%');
+    svg.style.maxWidth = '100%';
+    svg.style.height = 'auto';
+    svg.style.background = 'transparent';
+    svg.style.display = 'block';
+
+    mount.innerHTML = '';
+    mount.appendChild(svg);
+  } catch (err) {
+    mount.innerHTML = `<pre class="language-text"><code>${escapeHtml(
+      String((err as Error)?.message ?? err),
+    )}</code></pre>`;
+  }
 }
 
 // Observe the editor DOM for changes (typing, paste, setMarkdown re-render) so

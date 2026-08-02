@@ -121,6 +121,40 @@ function ExcalidrawEditorApp() {
     }, 1000);
   }, [post, uri]);
 
+  // Flush any pending (debounced, not-yet-saved) scene immediately. Without
+  // this, closing the editor before the 1s debounce fires would silently lose
+  // the last few seconds of edits — the markdown file (and the inline SVG)
+  // would never see them.
+  const flushSave = useCallback(() => {
+    const api = apiRef.current;
+    if (!api) return;
+    let data: string;
+    try {
+      data = JSON.stringify({
+        elements: api.getSceneElements(),
+        appState: { ...api.getAppState(), collaborators: undefined },
+        files: api.getFiles(),
+      });
+      JSON.parse(data);
+    } catch {
+      return;
+    }
+    if (data === lastSentRef.current) {
+      return;
+    }
+    lastSentRef.current = data;
+    clearTimeout(saveTimerRef.current);
+    post('updateExcalidrawData', [{ uri, data }]);
+  }, [post, uri]);
+
+  // On this webview being torn down we can't rely on the debounced save firing,
+  // so flush synchronously. Clearing the ref beforehand makes the flush idempotent.
+  useEffect(() => {
+    const onUnload = () => flushSave();
+    window.addEventListener('beforeunload', onUnload);
+    return () => window.removeEventListener('beforeunload', onUnload);
+  }, [flushSave]);
+
   return React.createElement(Excalidraw, {
     theme,
     autoFocus: true,

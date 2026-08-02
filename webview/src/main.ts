@@ -25,7 +25,7 @@ import {
   zhCN,
 } from '@muyajs/core';
 import type { IMuyaOptions, ILocale } from '@muyajs/core';
-import { setExcalidrawPost, observeExcalidrawBlocks } from './excalidraw-render';
+import { setExcalidrawPost, observeExcalidrawBlocks, refreshExcalidrawBlocks } from './excalidraw-render';
 
 // ---------- host <-> webview message protocol ---------
 type InitMsg = { type: 'init'; markdown: string; theme: 'light' | 'dark'; uri: string; dev?: boolean };
@@ -33,7 +33,8 @@ type SetMarkdownMsg = { type: 'setMarkdown'; markdown: string };
 type ThemeMsg = { type: 'theme'; theme: 'light' | 'dark' };
 type WorkspaceImageMsg = { type: 'workspaceImage'; requestId: number; path: string | null };
 type Ftr10CssMsg = { type: 'ftr10Css'; css: string };
-type ToWebview = InitMsg | SetMarkdownMsg | ThemeMsg | WorkspaceImageMsg | Ftr10CssMsg;
+type RefreshExcalidrawMsg = { type: 'refreshExcalidraw'; uri: string };
+type ToWebview = InitMsg | SetMarkdownMsg | ThemeMsg | WorkspaceImageMsg | Ftr10CssMsg | RefreshExcalidrawMsg;
 type FromWebview =
   | { type: 'ready' }
   | { type: 'change'; markdown: string }
@@ -495,6 +496,12 @@ window.addEventListener('message', (ev: MessageEvent) => {
     case 'workspaceImage':
       pendingImages.get(msg.requestId)?.(msg.path);
       pendingImages.delete(msg.requestId);
+      break;
+    case 'refreshExcalidraw':
+      // The standalone Excalidraw editor closed; force the inline SVG(s) to
+      // re-render so they reflect the saved scene.
+      console.log('[marktext-webview] refreshExcalidraw requested');
+      refreshExcalidrawBlocks(msg.uri);
       break;
   }
 });

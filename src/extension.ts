@@ -16,7 +16,8 @@ interface Ftr10CssMsg { type: 'ftr10Css'; css: string; }
 interface WorkspaceImageMsg { type: 'workspaceImage'; requestId: number; path: string | null; }
 interface ReloadMsg { type: 'reload'; }
 interface ExcalidrawEditMsg { type: 'excalidrawEdit'; uri: string; data: string; }
-type ToWebview = InitMsg | SetMarkdownMsg | ThemeMsg | WorkspaceImageMsg | ReloadMsg | Ftr10CssMsg;
+interface RefreshExcalidrawMsg { type: 'refreshExcalidraw'; uri: string; }
+type ToWebview = InitMsg | SetMarkdownMsg | ThemeMsg | WorkspaceImageMsg | ReloadMsg | Ftr10CssMsg | RefreshExcalidrawMsg;
 type FromWebview = ReadyMsg | ChangeMsg | OpenExternalMsg | RequestImageMsg | ExcalidrawEditMsg;
 
 let activePanel: vscode.WebviewPanel | undefined;
@@ -213,7 +214,7 @@ function openEditorForDoc(doc: vscode.TextDocument, context: vscode.ExtensionCon
         break;
       case 'excalidrawEdit':
         console.log('[marktext-host] received excalidrawEdit from webview');
-        openExcalidrawEditor(vscode.Uri.parse(msg.uri), msg.data, context);
+        openExcalidrawEditor(vscode.Uri.parse(msg.uri), msg.data, context, activePanel);
         break;
       case 'requestWorkspaceImage': {
         const requestId = msg.requestId;

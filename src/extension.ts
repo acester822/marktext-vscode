@@ -203,30 +203,35 @@ function applyChangeToDocument(uri: vscode.Uri, markdown: string) {
   setTimeout(() => { applyingFromWebview = false; }, 0);
 }
 
+function activeMdUri(): vscode.Uri | undefined {
+  // A focused MarkText custom-editor tab is NOT a TextEditor, so
+  // window.activeTextEditor is undefined there. Read the URI straight from the
+  // active tab's input instead — both Monaco and custom-editor tabs expose a
+  // TabInputText with a `uri`, and both target .md files.
+  const tab = vscode.window.tabGroups.activeTabGroup?.activeTab;
+  const input = tab?.input as { uri?: vscode.Uri } | undefined;
+  if (input?.uri && /\.md$/i.test(input.uri.fsPath)) return input.uri;
+  return undefined;
+}
+
 // Reopen the active .md file in the classic Monaco editor.
 function switchToClassic() {
-  const ed = vscode.window.activeTextEditor;
-  if (!ed || ed.document.languageId !== 'markdown') {
-    vscode.window.showInformationMessage('MarkText: open a Markdown (.md) file first.');
-    return;
-  }
-  const uri = ed.document.uri;
+  const uri = activeMdUri();
+  if (!uri) { vscode.window.showInformationMessage('MarkText: open a Markdown (.md) file first.'); return; }
+  const col = vscode.window.tabGroups.activeTabGroup?.viewColumn ?? vscode.ViewColumn.Active;
   // Close the WYSIWYG panel first so we don't end up with two tabs for one file.
   vscode.commands.executeCommand('workbench.action.closeActiveEditor').then(() => {
-    vscode.commands.executeCommand('vscode.openWith', uri, TEXT_EDITOR_ID, ed.viewColumn);
+    vscode.commands.executeCommand('vscode.openWith', uri, TEXT_EDITOR_ID, col);
   });
 }
 
 // Reopen the active .md file in the MarkText WYSIWYG editor.
 function switchToWysiwyg() {
-  const ed = vscode.window.activeTextEditor;
-  if (!ed || ed.document.languageId !== 'markdown') {
-    vscode.window.showInformationMessage('MarkText: open a Markdown (.md) file first.');
-    return;
-  }
-  const uri = ed.document.uri;
+  const uri = activeMdUri();
+  if (!uri) { vscode.window.showInformationMessage('MarkText: open a Markdown (.md) file first.'); return; }
+  const col = vscode.window.tabGroups.activeTabGroup?.viewColumn ?? vscode.ViewColumn.Active;
   vscode.commands.executeCommand('workbench.action.closeActiveEditor').then(() => {
-    vscode.commands.executeCommand('vscode.openWith', uri, VIEW_TYPE, ed.viewColumn);
+    vscode.commands.executeCommand('vscode.openWith', uri, VIEW_TYPE, col);
   });
 }
 
@@ -288,10 +293,11 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.commands.executeCommand('vscode.openWith', doc.uri, VIEW_TYPE, vscode.ViewColumn.Active);
     }),
     vscode.commands.registerCommand('marktext-editor.reloadWebview', () => {
-      const ed = vscode.window.activeTextEditor;
-      if (ed && ed.document.languageId === 'markdown') {
+      const uri = activeMdUri();
+      if (uri) {
+        const col = vscode.window.tabGroups.activeTabGroup?.viewColumn ?? vscode.ViewColumn.Active;
         vscode.commands.executeCommand('workbench.action.closeActiveEditor');
-        vscode.commands.executeCommand('vscode.openWith', ed.document.uri, VIEW_TYPE, ed.viewColumn);
+        vscode.commands.executeCommand('vscode.openWith', uri, VIEW_TYPE, col);
       } else {
         vscode.window.showInformationMessage('MarkText: no WYSIWYG editor open to reload.');
       }

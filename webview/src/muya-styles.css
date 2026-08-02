@@ -202,12 +202,12 @@ code.mu-inline-rule {
         var(--ftr10-accent-2, var(--vscode-textPreformat-background, #808080)) 22%,
         transparent
     );
-    border: 1px solid color-mix(
+    border: 1.5px solid color-mix(
         in srgb,
-        var(--ftr10-accent-2, var(--vscode-textPreformat-background, #808080)) 38%,
+        var(--ftr10-accent-2, var(--vscode-textPreformat-background, #808080)) 55%,
         transparent
     );
-    /* Match the rounded squircle used by the task-list checkboxes rather than
-       core's tight 3px. */
-    border-radius: 7px;
+    /* Pronounced rounded squircle, matching the task-list checkboxes, so the
+       accent border reads clearly at the small font size inline code uses. */
+    border-radius: 10px;
 }

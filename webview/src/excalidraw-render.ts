@@ -234,19 +234,25 @@ async function renderSvgInto(mount: HTMLElement, code: string) {
     });
 
     // Strip the baked-in opaque background <rect> (Excalidraw always paints
-    // one, even when viewBackgroundColor is transparent).
+    // one, even when viewBackgroundColor is transparent). It's a direct child
+    // of the <svg> root.
     svg
       .querySelectorAll(
         'rect[data-id="background"], rect.excalidraw__canvas-background',
       )
       .forEach((rect: SVGRectElement) => rect.remove());
-    // Fallback: drop any remaining no-stroke rect that just fills a colour.
-    svg.querySelectorAll('rect').forEach((rect: SVGRectElement) => {
-      const fill = (rect.getAttribute('fill') || '').toLowerCase();
-      const hasStroke = (rect.getAttribute('stroke') || '').trim();
-      if (!hasStroke && fill && fill !== 'none') {
-        rect.remove();
-      }
+
+    // Fallback: drop the full-canvas background rect when Excalidraw doesn't
+    // tag it (older exports). It is always a DIRECT child of the <svg> root.
+    // Crucially, never touch rects nested in <mask>/<g>/<defs> — bound text on
+    // arrows/lines is rendered through a <mask> that uses #fff/#000 shapes;
+    // stripping those empties the mask so the entire arrow group turns
+    // invisible, even though its <path>s are still in the DOM.
+    Array.from(svg.children as unknown as Element[]).forEach((el: Element) => {
+      if (el.tagName !== 'rect') return;
+      const fill = (el.getAttribute('fill') || '').toLowerCase();
+      const hasStroke = (el.getAttribute('stroke') || '').trim();
+      if (!hasStroke && fill && fill !== 'none') el.remove();
     });
 
     svg.setAttribute('width', '100%');

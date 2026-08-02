@@ -11,7 +11,7 @@
  * - outgoing: postMessage({command:'updateExcalidrawData', args:[{uri,data}]})
  * - incoming: {command:'setExcalidrawData', data} -> replace the scene
  */
-import { Excalidraw } from '@excalidraw/excalidraw';
+import { Excalidraw, serializeAsJSON } from '@excalidraw/excalidraw';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 
@@ -63,6 +63,20 @@ function ExcalidrawEditorApp() {
   const lastSentRef = useRef<string>('');
   const saveTimerRef = useRef<any>(null);
 
+  // Serialize the scene through Excalidraw's official serializer. This adds the
+  // `type:'excalidraw', version, source` envelope that Excalidraw's own file
+  // loader (loadFromBlob) REQUIRES — a bare `{elements, appState, files}` object
+  // is valid JSON but is rejected with "Error: invalid file", so scenes saved
+  // that way can't be reopened in Excalidraw online / the real app.
+  const serializeScene = useCallback((api: any): string => {
+    return serializeAsJSON(
+      api.getSceneElements(),
+      { ...api.getAppState(), collaborators: undefined },
+      api.getFiles() || {},
+      'local',
+    );
+  }, []);
+
   const post = useCallback((command: string, args: unknown[]) => {
     if (vscodeApi) {
       vscodeApi.postMessage({ command, args });
@@ -102,11 +116,7 @@ function ExcalidrawEditorApp() {
     }
     let data: string;
     try {
-      data = JSON.stringify({
-        elements: api.getSceneElements(),
-        appState: { ...api.getAppState(), collaborators: undefined },
-        files: api.getFiles(),
-      });
+      data = serializeScene(api);
       JSON.parse(data);
     } catch {
       return;
@@ -119,7 +129,7 @@ function ExcalidrawEditorApp() {
     saveTimerRef.current = setTimeout(() => {
       post('updateExcalidrawData', [{ uri, data }]);
     }, 1000);
-  }, [post, uri]);
+  }, [post, uri, serializeScene]);
 
   // Flush any pending (debounced, not-yet-saved) scene immediately. Without
   // this, closing the editor before the 1s debounce fires would silently lose
@@ -130,11 +140,7 @@ function ExcalidrawEditorApp() {
     if (!api) return;
     let data: string;
     try {
-      data = JSON.stringify({
-        elements: api.getSceneElements(),
-        appState: { ...api.getAppState(), collaborators: undefined },
-        files: api.getFiles(),
-      });
+      data = serializeScene(api);
       JSON.parse(data);
     } catch {
       return;
@@ -145,7 +151,7 @@ function ExcalidrawEditorApp() {
     lastSentRef.current = data;
     clearTimeout(saveTimerRef.current);
     post('updateExcalidrawData', [{ uri, data }]);
-  }, [post, uri]);
+  }, [post, uri, serializeScene]);
 
   // On this webview being torn down we can't rely on the debounced save firing,
   // so flush synchronously. Clearing the ref beforehand makes the flush idempotent.
@@ -166,11 +172,7 @@ function ExcalidrawEditorApp() {
     excalidrawAPI: (api: any) => {
       apiRef.current = api;
       try {
-        lastSentRef.current = JSON.stringify({
-          elements: api.getSceneElements(),
-          appState: { ...api.getAppState(), collaborators: undefined },
-          files: api.getFiles(),
-        });
+        lastSentRef.current = serializeScene(api);
       } catch {
         /* ignore */
       }

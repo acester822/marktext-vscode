@@ -150,7 +150,12 @@ li.mu-task-list-item > span.mu-task-list-checkbox::after {
     width: 18px;
     height: 18px;
 
-    background-color: var(--editor-bg-color);
+    /* The tick is knocked out of the filled squircle, so it must be painted in
+       a SOLID colour. --editor-bg-color resolves to --ftr10-bg, which in this
+       theme is transparent/gradient — a transparent tick over the green fill is
+       simply invisible, which is why the checked box read as a plain colour
+       block. --ftr10-surface-1 is the palette's solid surface colour. */
+    background-color: var(--ftr10-surface-1, var(--vscode-editor-background, #1e1e1e));
     border: none;
 
     /* Core scales the tick in with `rotate(-45deg) scale(0)`; the mask artwork
@@ -199,5 +204,7 @@ code.mu-inline-rule {
         var(--ftr10-accent-2, var(--vscode-textPreformat-background, #808080)) 38%,
         transparent
     );
-    border-radius: 4px;
+    /* Match the rounded squircle used by the task-list checkboxes rather than
+       core's tight 3px. */
+    border-radius: 7px;
 }

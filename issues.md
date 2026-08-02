@@ -2,7 +2,7 @@
 
 ## Active:
 
-- [x] Find and Replace does not work, keybind or thru the menu
+- [ ] Find and Replace does not work, keybind or thru the menu
 
   - [ ] Followup: None! It is working great!
 

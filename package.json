@@ -2,7 +2,7 @@
   "name": "marktext-vscode",
   "displayName": "MarkText Editor",
   "description": "WYSIWYG Markdown editor for VS Code, powered by MarkText's @muyajs/core (muya) engine.",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "publisher": "marktext-vscode",
   "license": "MIT",
   "engines": {

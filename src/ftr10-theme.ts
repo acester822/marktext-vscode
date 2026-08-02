@@ -153,13 +153,22 @@ export const FTR10_MUYA_BRIDGE_CSS = `
     var(--ftr10-accent-2, var(--vscode-textPreformat-background, #808080)) 22%,
     transparent
   ) !important;
-  border: 2px solid color-mix(
+  border: 1px solid color-mix(
     in srgb,
     var(--ftr10-accent-2, var(--vscode-textPreformat-background, #808080)) 65%,
     transparent
   ) !important;
   border-radius: 8px !important;
+  /* muya sets font-size:0.8em, which makes the bordered box taller than the
+     line so it overhangs top and bottom. Match the surrounding text size so the
+     pill box height equals the glyph height, then middle-align flush. */
+  font-size: 1em !important;
   font-family: var(--ftr10-code-font, inherit) !important;
+  padding: 0.05em 0.4em !important;
+  line-height: 1 !important;
+  /* middle centers the box; the line's middle sits slightly high, so a small
+     negative nudge lands the pill on the glyph center. */
+  vertical-align: -0.1em !important;
 }
 #app .mu-container pre {
   background: var(--ftr10-code-bg, inherit);

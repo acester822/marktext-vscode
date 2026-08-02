@@ -443,10 +443,67 @@ function setupContextMenu() {
 
   function show(x: number, y: number) {
     menu.style.display = 'block';
-    const rect = menu.getBoundingClientRect();
-    menu.style.left = `${Math.min(x, window.innerWidth - rect.width - 4)}px`;
-    menu.style.top = `${Math.min(y, window.innerHeight - rect.height - 4)}px`;
+    // Reset any clamp from a previous open before measuring.
+    menu.style.maxHeight = '';
+    menu.style.overflowY = '';
+    const margin = 6;
+    let rect = menu.getBoundingClientRect();
+    // A menu taller than the panel can't be nudged into view — cap it and let
+    // it scroll instead of spilling off the bottom.
+    if (rect.height > window.innerHeight - margin * 2) {
+      menu.style.maxHeight = `${window.innerHeight - margin * 2}px`;
+      menu.style.overflowY = 'auto';
+      rect = menu.getBoundingClientRect();
+    }
+    menu.style.left = `${Math.max(margin, Math.min(x, window.innerWidth - rect.width - margin))}px`;
+    menu.style.top = `${Math.max(margin, Math.min(y, window.innerHeight - rect.height - margin))}px`;
+    positionSubmenus();
   }
+
+  // Submenus open to the right / downward by default. Near the panel edge that
+  // runs them off-screen, where nothing can scroll them back into view, so flip
+  // them to the other side. Done on open (and on hover, below) because the
+  // parent menu's own position decides which way there is room.
+  function positionSubmenus() {
+    const margin = 6;
+    menu.querySelectorAll<HTMLElement>('.mtx-context-submenu').forEach((sub) => {
+      const parent = sub.parentElement as HTMLElement | null;
+      if (!parent) return;
+      // Measure without flicker: the element is display:none until hovered.
+      const prevDisplay = sub.style.display;
+      const prevVis = sub.style.visibility;
+      sub.style.visibility = 'hidden';
+      sub.style.display = 'block';
+      sub.style.left = '100%';
+      sub.style.right = 'auto';
+      sub.style.top = '-4px';
+      sub.style.bottom = 'auto';
+      sub.style.maxHeight = '';
+      sub.style.overflowY = '';
+
+      const prect = parent.getBoundingClientRect();
+      const srect = sub.getBoundingClientRect();
+      // Horizontal: flip to the left of the parent when it would overflow.
+      if (prect.right + srect.width + margin > window.innerWidth) {
+        sub.style.left = 'auto';
+        sub.style.right = '100%';
+      }
+      // Vertical: clamp height, then shift up so the bottom stays on-screen.
+      const maxH = window.innerHeight - margin * 2;
+      if (srect.height > maxH) {
+        sub.style.maxHeight = `${maxH}px`;
+        sub.style.overflowY = 'auto';
+      }
+      const h = Math.min(srect.height, maxH);
+      const overflowBottom = prect.top - 4 + h + margin - window.innerHeight;
+      if (overflowBottom > 0) {
+        sub.style.top = `${-4 - overflowBottom}px`;
+      }
+      sub.style.display = prevDisplay;
+      sub.style.visibility = prevVis;
+    });
+  }
+
   function hide() {
     menu.style.display = 'none';
   }
@@ -464,6 +521,97 @@ function setupContextMenu() {
 }
 
 setupContextMenu();
+
+// ---------------------------------------------------------------------------
+// Keep muya's floating menus inside the panel.
+//
+// muya positions every float (quick-insert `/`, paragraph front menu, inline
+// format toolbar, emoji picker, table tools, …) with floating-ui using only
+// `[offset(), flip()]` — see BaseFloat.show() in @muyajs/core. There is no
+// `shift()` to slide a box back into view and no `size()` to cap its height,
+// so in a narrow/short VS Code webview a float that opens near an edge simply
+// runs past it and gets clipped. Those middlewares aren't in the bundled
+// engine, and the user asked to fix this on the VS Code side rather than
+// patching muya core, so we clamp the wrapper after muya positions it.
+//
+// muya writes `left`/`top` (and sets `opacity: 1`) on `.mu-float-wrapper`, so
+// a MutationObserver on style changes lets us correct it in the same frame.
+// ---------------------------------------------------------------------------
+function clampFloatsIntoView() {
+  const MARGIN = 6;
+
+  const clamp = (box: HTMLElement) => {
+    // Only touch floats muya has actually placed: it parks them off-screen at
+    // top/right -9999px until shown.
+    if (box.style.opacity !== '1') return;
+
+    // Height first — a clamped height changes the rect we position against.
+    const maxH = window.innerHeight - MARGIN * 2;
+    const container = box.querySelector<HTMLElement>('.mu-float-container');
+    if (box.offsetHeight > maxH) {
+      box.style.maxHeight = `${maxH}px`;
+      // The wrapper is `overflow: hidden`; scroll the inner container so the
+      // list stays reachable instead of being cut off.
+      if (container) {
+        container.style.maxHeight = `${maxH}px`;
+        container.style.overflowY = 'auto';
+      }
+    }
+
+    // Re-read after the height clamp: muya's own ResizeObserver also writes an
+    // explicit width/height onto the wrapper, so offsetHeight here can still be
+    // the pre-clamp value on the first pass.
+    const w = box.offsetWidth;
+    const h = Math.min(box.offsetHeight, maxH);
+    const left = parseFloat(box.style.left);
+    const top = parseFloat(box.style.top);
+    if (!Number.isFinite(left) || !Number.isFinite(top)) return;
+
+    const maxLeft = window.innerWidth - w - MARGIN;
+    const maxTop = window.innerHeight - h - MARGIN;
+    const nextLeft = Math.max(MARGIN, Math.min(left, maxLeft));
+    const nextTop = Math.max(MARGIN, Math.min(top, maxTop));
+
+    // Write only on change, otherwise we retrigger our own observer.
+    if (Math.abs(nextLeft - left) > 0.5) box.style.left = `${nextLeft}px`;
+    if (Math.abs(nextTop - top) > 0.5) box.style.top = `${nextTop}px`;
+  };
+
+  const clampAll = () => {
+    document
+      .querySelectorAll<HTMLElement>('.mu-float-wrapper')
+      .forEach((box) => clamp(box));
+  };
+
+  // Two passes: muya sizes the wrapper from a ResizeObserver, so the first pass
+  // can measure a stale height. The second (next frame, after layout settles)
+  // converges. Writes are change-guarded, so a settled float is a no-op.
+  const clampAllSettled = () => {
+    clampAll();
+    requestAnimationFrame(clampAll);
+  };
+
+  // Floats are appended to <body> lazily, and repositioned via inline styles.
+  const observer = new MutationObserver((records) => {
+    let hit = false;
+    for (const rec of records) {
+      if (rec.type === 'childList') { hit = true; break; }
+      const t = rec.target as HTMLElement;
+      if (t.classList?.contains('mu-float-wrapper')) { hit = true; break; }
+    }
+    if (hit) requestAnimationFrame(clampAllSettled);
+  });
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['style'],
+  });
+
+  window.addEventListener('resize', () => requestAnimationFrame(clampAllSettled));
+}
+
+clampFloatsIntoView();
 
 window.addEventListener('message', (ev: MessageEvent) => {
   const msg = ev.data as ToWebview;

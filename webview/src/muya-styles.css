@@ -50,6 +50,13 @@
    --------------------------------------------------------------------------- */
 :root {
     --editor-area-width: 100%;
+
+    /* Hand-drawn (Excalidraw-ish) task-list checkbox artwork, used as
+       mask-images below so the marker still takes its colour from the theme.
+       Each shape is a few wobbly bezier strokes with slight corner overshoot
+       so it reads as sketched rather than geometric. */
+    --mtx-checkbox-box: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cg fill=%22none%22 stroke=%22%23fff%22 stroke-width=%221.9%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M4.6 3.3 C8.5 2.7, 15.2 2.9, 19.7 3.5%22/%3E%3Cpath d=%22M20.4 4.1 C21.1 8.4, 20.8 15.1, 20.3 19.6%22/%3E%3Cpath d=%22M19.6 20.4 C15.3 21.2, 8.6 20.9, 4.2 20.4%22/%3E%3Cpath d=%22M3.5 19.6 C2.8 15.4, 3.0 8.3, 3.6 3.9%22/%3E%3C/g%3E%3C/svg%3E");
+    --mtx-checkbox-tick: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Cg fill=%22none%22 stroke=%22%23fff%22 stroke-width=%222.6%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M5.2 12.4 C7.0 14.2, 8.4 16.0, 9.9 18.1%22/%3E%3Cpath d=%22M9.5 18.3 C12.2 13.6, 15.2 9.4, 19.1 5.6%22/%3E%3C/g%3E%3C/svg%3E");
 }
 
 .mu-container {
@@ -74,4 +81,81 @@
     max-width: 100%;
     margin-right: auto;
     margin-left: auto;
+}
+
+/* ---------------------------------------------------------------------------
+   Task-list checkboxes: rough, hand-drawn "squircle" (Excalidraw style).
+
+   muya core draws a circular marker (`border-radius: 50%` + a CSS-triangle
+   checkmark) in blockSyntax.css. Overridden here on the VS Code side rather
+   than in the vendored engine, per request.
+
+   Implementation: the box and the tick are SVG mask-images, with the visible
+   colour coming from `background-color`. Masks (rather than inline `stroke`)
+   are what let the marker keep following the theme's currentColor-ish vars —
+   a data-URI SVG can't read CSS custom properties. The wobbly paths are
+   hand-authored bezier/polyline segments so the stroke reads as sketched
+   rather than geometric.
+   --------------------------------------------------------------------------- */
+li.mu-task-list-item > input[type='checkbox']::before,
+li.mu-task-list-item > span.mu-task-list-checkbox::before {
+    /* Neutralise the core circle: no border/background/radius, the shape now
+       comes entirely from the mask. */
+    background-color: var(--editor-color-50);
+    border: none;
+    border-radius: 0;
+
+    -webkit-mask-image: var(--mtx-checkbox-box);
+    mask-image: var(--mtx-checkbox-box);
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-position: center;
+    mask-position: center;
+}
+
+/* Checked: tint the squircle with the accent colour. */
+li.mu-task-list-item > input.mu-checkbox-checked::before,
+li.mu-task-list-item > span.mu-checkbox-checked::before {
+    background: var(--theme-color);
+    background-color: var(--theme-color);
+    border-color: transparent;
+
+    /* Core adds a glow sized for a circle; it looks wrong under a square. */
+    box-shadow: none;
+}
+
+/* The tick. Core builds it from two rotated borders — replace that with a
+   sketched check mask so it matches the box. */
+li.mu-task-list-item > input::after,
+li.mu-task-list-item > span.mu-task-list-checkbox::after {
+    top: 0;
+    left: 0;
+
+    box-sizing: border-box;
+    width: 14px;
+    height: 14px;
+
+    background-color: var(--editor-bg-color);
+    border: none;
+
+    /* Core scales the tick in with `rotate(-45deg) scale(0)`; the mask artwork
+       is already upright, so only the scale is wanted. */
+    transform: scale(0);
+    transform-origin: center;
+
+    -webkit-mask-image: var(--mtx-checkbox-tick);
+    mask-image: var(--mtx-checkbox-tick);
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-position: center;
+    mask-position: center;
+}
+
+li.mu-task-list-item > input.mu-checkbox-checked::after,
+li.mu-task-list-item > span.mu-checkbox-checked::after {
+    transform: scale(1);
 }

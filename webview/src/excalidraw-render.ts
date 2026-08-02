@@ -168,6 +168,7 @@ function decorateBlock(pre: HTMLElement, uri: string) {
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
+    console.log('[marktext-webview] Excalidraw Edit clicked -> posting excalidrawEdit');
     post({ type: 'excalidrawEdit', uri, data: code });
   });
   wrapper.appendChild(btn);

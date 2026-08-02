@@ -212,6 +212,7 @@ function openEditorForDoc(doc: vscode.TextDocument, context: vscode.ExtensionCon
         try { vscode.env.openExternal(vscode.Uri.parse(msg.href)); } catch { /* ignore */ }
         break;
       case 'excalidrawEdit':
+        console.log('[marktext-host] received excalidrawEdit from webview');
         openExcalidrawEditor(vscode.Uri.parse(msg.uri), msg.data, context);
         break;
       case 'requestWorkspaceImage': {

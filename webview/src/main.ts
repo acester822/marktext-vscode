@@ -46,7 +46,7 @@ let dev = false;
 
 // Always-on build marker so we can confirm which bundle is actually running
 // in the webview (guards against a stale/cached build after reinstall).
-const BUILD_ID = '2026-08-01a-excalidraw';
+const BUILD_ID = '2026-08-01b-external-edit';
 // eslint-disable-next-line no-console
 console.log(`[marktext-webview] build ${BUILD_ID} loaded`);
 

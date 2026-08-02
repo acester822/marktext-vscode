@@ -1,9 +1,32 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
 
 // Map of source markdown URI -> open editor panel, so re-editing the same file
 // reveals the existing window instead of stacking duplicates.
 const excalidrawPanels = new Map<string, vscode.WebviewPanel>();
+
+// Read the bundled Excalidraw stylesheet. @excalidraw/excalidraw does not
+// export the CSS through its package.json "exports" map, so require.resolve
+// fails; resolve the path relative to the extension root instead (node_modules
+// is always on disk in dev and packaged). Falls back to empty so the editor
+// still boots, just unstyled.
+function readExcalidrawCss(): string {
+  try {
+    const cssPath = path.join(
+      EXT_ROOT,
+      'node_modules',
+      '@excalidraw',
+      'excalidraw',
+      'dist',
+      'prod',
+      'index.css',
+    );
+    return fs.readFileSync(cssPath, 'utf8');
+  } catch {
+    return '';
+  }
+}
 
 function getNonce(): string {
   let text = '';
@@ -67,6 +90,7 @@ export function openExcalidrawEditor(
   context: vscode.ExtensionContext,
 ) {
   const key = uri.toString();
+  console.log('[marktext-host] openExcalidrawEditor called for', key);
   const existing = excalidrawPanels.get(key);
   if (existing) {
     existing.reveal(undefined, false);
@@ -103,32 +127,27 @@ export function openExcalidrawEditor(
   const editorJs = panel.webview.asWebviewUri(
     vscode.Uri.file(path.join(EXT_ROOT, 'out', 'webview', 'excalidraw-editor.js')),
   );
-  const excalidrawCss = panel.webview.asWebviewUri(
-    vscode.Uri.file(
-      path.join(
-        EXT_ROOT,
-        'node_modules',
-        '@excalidraw',
-        'excalidraw',
-        'dist',
-        'prod',
-        'index.css',
-      ),
-    ),
-  );
   const isDark =
     vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.Dark ||
     vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.HighContrast;
+
+  // Inline the Excalidraw stylesheet directly (it uses only data: URLs, so it
+  // contains no external asset references). This avoids serving it from
+  // node_modules at runtime, which breaks in code-server / remote where the
+  // extension path does not map to node_modules.
+  const excalidrawCss = readExcalidrawCss();
 
   panel.webview.html = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="stylesheet" href="${excalidrawCss}" />
-<style nonce="${nonce}">
+<style>
   html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
   .excalidraw-standalone-mount { position: fixed; inset: 0; }
+</style>
+<style nonce="${nonce}">
+${excalidrawCss}
 </style>
 </head>
 <body

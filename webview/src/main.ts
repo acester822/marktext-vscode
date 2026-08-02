@@ -66,13 +66,19 @@ function post(msg: FromWebview) {
 // webview URI it can actually render (raw file:// is blocked by the webview).
 const pendingImages = new Map<number, (p: { path: string | null; uri: string | null }) => void>();
 let reqSeq = 0;
+// The loadable webview URI for the image most recently picked, so imageAction
+// (which runs AFTER the picker and persists the markdown) can seed muya's
+// urlMap with BOTH the relative path and the file:// form — the two keys muya's
+// renderer may look up — so the freshly-inserted image renders immediately.
+let lastPickedImageUri: string | null = null;
 
 async function imagePathPicker(): Promise<string> {
   const requestId = ++reqSeq;
   return new Promise<string>((resolve) => {
     pendingImages.set(requestId, (r) => {
       // Persist the portable relative path in the markdown. Rendering resolves
-      // it to the webview URI separately (see resolveLocalImage).
+      // it to the webview URI via urlMap (see applyImageResolution / imageKey).
+      lastPickedImageUri = r?.uri ?? null;
       resolve(r?.path ?? '');
     });
     post({ type: 'requestWorkspaceImage', requestId });
@@ -80,44 +86,122 @@ async function imagePathPicker(): Promise<string> {
 }
 
 // The markdown src to persist. muya calls imageAction with {src,...} for the
-// upload path; a plain passthrough keeps the (webview-URI) src we already set,
-// which is what muya writes into the document. We don't run a real upload.
+// upload path. We keep the picked src (the relative path) as the persisted
+// markdown, and — crucially — seed muya's urlMap/loadImageMap with the
+// loadable webview URI for the just-picked image so it renders at once instead
+// of failing the browser fetch. We don't run a real upload.
 async function imageAction(_info: { src?: string }): Promise<string> {
-  return _info?.src ?? '';
+  // Keep the picked src (relative path) as the persisted markdown.
+  const src = _info?.src ?? '';
+  // Seed muya's urlMap/loadImageMap with the loadable webview URI for the
+  // just-picked image so it renders immediately instead of failing the browser
+  // fetch. Register under BOTH the relative key and the file:// key muya's
+  // renderer may look up, then re-render the content blocks.
+  if (lastPickedImageUri && muya) {
+    const r = (muya as any).editor?.inlineRenderer?.renderer;
+    if (r && src) {
+      for (const key of [src, `file://${src}`]) {
+        r.urlMap.set(key, lastPickedImageUri);
+        r.loadImageMap.set(key, { id: key, isSuccess: true, url: lastPickedImageUri, width: 100, height: 100 });
+      }
+      imageUriCache.set(src, lastPickedImageUri);
+      lastPickedImageUri = null;
+      scheduleImageRefresh();
+    }
+  }
+  return src;
 }
 
-// ---- local image rendering ------------------------------------------------  
-// muya renders <img src="..."> straight from the markdown src. Local/relative
-// paths won't load in the webview, so after render we rewrite them to webview
-// URIs via a host round-trip. A small cache maps local src -> webview URI,
-// and a debounced observer re-scans after muya re-renders (typing, setMarkdown,
-// image insert) — the same pattern the Excalidraw decorator uses.
-const imageUriCache = new Map<string, string>(); // local src -> webview uri
-const pendingImageResolves = new Map<number, string>(); // requestId -> local src
+// ---- local image rendering ------------------------------------------------
+// muya renders <img> from the markdown src. In a VS Code webview, file:// and
+// relative paths can't be fetched by the browser, so muya's own loader
+// (`loadImageAsync` -> `new Image()`) FAILS, REMOVES the <img> element, and
+// stamps `mu-image-fail` — caching the failure in `renderer.loadImageMap`. A
+// post-render DOM rewrite of <img src> can never recover: the element is gone
+// and every re-render re-fails. The only fix that works is to feed muya a
+// LOADABLE uri (the host's vscode-webview:// uri) through its own
+// `renderer.urlMap` / `renderer.loadImageMap`, keyed by the exact key muya's
+// image renderer looks up (`Pr(src).src`), so muya skips its failing
+// `new Image()` pass and emits the loadable <img> directly. We then force a
+// re-render of the content blocks so the image swaps in.
+const imageUriCache = new Map<string, string>(); // raw markdown src -> webview uri
+const resolvingSrcs = new Set<string>();          // raw srcs with an in-flight request
+const pendingImageResolves = new Map<number, string>(); // requestId -> raw src
 let resolveSeq = 0;
 
+// The key muya's image renderer uses to look up urlMap/loadImageMap. With
+// DIRNAME undefined in a webview, muya's internal `Pr()` maps any local image
+// path (relative or absolute, NOT http/data/file://) to `file://<path>`, and
+// keeps an explicit file:// src verbatim. Match that exactly so our entry is
+// the one muya actually consults. http(s)/data/vscode-webview URIs are already
+// loadable, so we return null to skip them.
+function muyaImageKey(src: string): string | null {
+  if (/^(https?:|data:|vscode-webview:)/i.test(src)) return null;
+  if (/^file:\/\//i.test(src)) return src;
+  return `file://${src}`;
+}
+
 function resolveLocalImage(src: string): void {
-  // http(s)/data URIs render fine as-is; already-known paths are cached.
-  if (/^(https?:|data:|vscode-webview:)/i.test(src) || imageUriCache.has(src)) return;
+  if (imageUriCache.has(src) || resolvingSrcs.has(src)) return;
+  resolvingSrcs.add(src);
   const requestId = ++resolveSeq;
   pendingImageResolves.set(requestId, src);
   post({ type: 'resolveImage', requestId, src });
 }
 
-function applyLocalImageUris() {
-  document.querySelectorAll<HTMLImageElement>('.mu-container img').forEach((img) => {
-    const src = img.getAttribute('src') || '';
-    if (!src || /^(https?:|data:|vscode-webview:)/i.test(src)) return;
-    const resolved = imageUriCache.get(src);
-    if (resolved && resolved !== src) img.setAttribute('src', resolved);
-    else resolveLocalImage(src);
-  });
+// Called once the host returns a loadable webview URI for a raw src. Seed both
+// muya maps with a "success" entry keyed by muya's image key, so the renderer
+// uses the loadable URI and never attempts its failing `new Image()` pass, then
+// schedule a re-render of the content blocks to swap the image in.
+function applyImageResolution(src: string, uri: string | null): void {
+  if (!uri) return;
+  const key = muyaImageKey(src);
+  if (!key || !muya) return;
+  imageUriCache.set(src, uri);
+  const r = (muya as any).editor?.inlineRenderer?.renderer;
+  if (!r) return;
+  r.urlMap.set(key, uri);
+  r.loadImageMap.set(key, { id: key, isSuccess: true, url: uri, width: 100, height: 100 });
+  scheduleImageRefresh();
 }
 
+let refreshTimer: number | undefined;
+function scheduleImageRefresh() {
+  if (refreshTimer !== undefined) clearTimeout(refreshTimer);
+  refreshTimer = window.setTimeout(refreshImages, 50);
+}
+
+// Re-render the content blocks so newly-resolved images appear. Guarded with
+// `applyingExternal` so the resulting json-change is not echoed back to the
+// host (the markdown is unchanged, so the host would no-op anyway, but this
+// avoids needless round-trips and caret churn).
+function refreshImages() {
+  if (!muya) return;
+  const sp = (muya as any).editor?.scrollPage;
+  if (!sp?.breadthFirstTraverse) return;
+  applyingExternal = true;
+  try {
+    sp.breadthFirstTraverse((b: any) => { if (b?.isContent?.()) b.update(); });
+  } finally {
+    setTimeout(() => { applyingExternal = false; }, 0);
+  }
+}
+
+// Scan the document for image wrappers muya rendered from a local/relative src.
+// On failure muya removes the <img> but KEEPS `data-raw` (the original token,
+// e.g. `![alt](./assets/x.png)`) on the `.mu-inline-image` wrapper, so we read
+// the src from there. A debounced MutationObserver keeps catching images that
+// appear after render (insert, paste, setMarkdown, theme re-boot).
 function scanLocalImages() {
-  applyLocalImageUris();
-  // Resolve cache entries asynchronously; applying is handled in
-  // resolveImageResult. No-op while muya is mid-edit is fine — we re-scan.
+  document.querySelectorAll<HTMLElement>('.mu-container .mu-inline-image').forEach((wrap) => {
+    const raw = (wrap as any).dataset?.raw || wrap.getAttribute('data-raw') || '';
+    const m = /!\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\s*\)/.exec(raw);
+    if (!m) return; // reference-style or otherwise unparseable — rare; skipped
+    const src = m[1];
+    const key = muyaImageKey(src);
+    if (!key) return; // already loadable (http/data/webview)
+    if (!imageUriCache.has(src) && !resolvingSrcs.has(src)) resolveLocalImage(src);
+  });
 }
 
 // Debounced observer: local images may appear after muya renders (initial boot,
@@ -126,20 +210,34 @@ function observeLocalImages(root: HTMLElement) {
   let t: number | undefined;
   const obs = new MutationObserver(() => {
     if (t !== undefined) clearTimeout(t);
-    t = window.setTimeout(scanLocalImages, 150);
+    t = window.setTimeout(() => { scanLocalImages(); applyContainerWidth(); }, 150);
   });
-  obs.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });
+  obs.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'class'] });
   scanLocalImages();
 }
 
-// Ignore the unused-warning: keep handler name descriptive for the switch below.
 function onResolveImageResult(requestId: number, uri: string | null) {
   const src = pendingImageResolves.get(requestId);
   pendingImageResolves.delete(requestId);
+  if (src) resolvingSrcs.delete(src);
   if (!src) return;
-  if (uri) imageUriCache.set(src, uri);
-  // Re-scan so any <img> with that src picks it up.
-  applyLocalImageUris();
+  applyImageResolution(src, uri);
+}
+
+// Re-seed muya's urlMap/loadImageMap from the cache. Used after a re-boot
+// (theme switch), which wipes those maps, so cached local images keep rendering
+// without waiting on a fresh host round-trip.
+function reapplyImageCache() {
+  if (!muya) return;
+  const r = (muya as any).editor?.inlineRenderer?.renderer;
+  if (!r) return;
+  imageUriCache.forEach((uri, src) => {
+    for (const key of [muyaImageKey(src), src].filter(Boolean) as string[]) {
+      r.urlMap.set(key, uri);
+      r.loadImageMap.set(key, { id: key, isSuccess: true, url: uri, width: 100, height: 100 });
+    }
+  });
+  if (imageUriCache.size) scheduleImageRefresh();
 }
 
 // muya-core/lib/muya (where IMuyaPluginConstructor is declared) is not
@@ -235,6 +333,11 @@ function boot(markdown: string, theme: 'light' | 'dark', uri: string, maxContent
   // Local images: render them via webview URIs (scan after muya renders).
   observeLocalImages(container);
   applyMaxContentWidth(maxContentWidth);
+  // After a re-boot (theme switch) muya clears its urlMap/loadImageMap, so
+  // re-seed every cached resolution so previously-rendered local images keep
+  // showing. (scanLocalImages below will also re-trigger host lookups, but the
+  // cache lets us restore instantly without waiting on the round-trip.)
+  reapplyImageCache();
   post({ type: 'ready' });
 }
 
@@ -247,8 +350,24 @@ function boot(markdown: string, theme: 'light' | 'dark', uri: string, maxContent
 let currentMaxWidth = 0;
 function applyMaxContentWidth(width?: number) {
   currentMaxWidth = width && width > 0 ? Math.round(width) : 0;
+  applyContainerWidth();
+}
+// Set the width on BOTH the :root custom property (consumed by muya's
+// .mu-container max-width and the inline-math calc) AND directly on the
+// .mu-container element. muya declares --editor-area-width only in a static
+// :root rule (no runtime injection, no !important), so the inline :root var
+// wins; setting .mu-container inline too is bulletproof against any later
+// runtime stylesheet muya might attach.
+function applyContainerWidth() {
+  const w = currentMaxWidth > 0 ? `${currentMaxWidth}ch` : '100%';
   const root = document.documentElement;
-  root.style.setProperty('--editor-area-width', currentMaxWidth > 0 ? `${currentMaxWidth}ch` : '100%');
+  root.style.setProperty('--editor-area-width', w);
+  const container = document.querySelector<HTMLElement>('#app .mu-container');
+  if (container) {
+    container.style.maxWidth = w;
+    container.style.marginLeft = 'auto';
+    container.style.marginRight = 'auto';
+  }
 }
 
 function setMarkdown(markdown: string) {

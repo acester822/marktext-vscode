@@ -37,6 +37,12 @@
           "type": "boolean",
           "default": false,
           "description": "Open .md files in the MarkText WYSIWYG editor by default instead of the built-in Monaco text editor. Toggle this off to always use the classic editor (you can still switch per-file from the editor title bar)."
+        },
+        "marktext.editor.maxContentWidth": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Max width of the editing column, in characters (ch units). 0 = fill the webview's full width (default). When set to e.g. 125, text wraps at that width and the column is centered in the webview while the content stays left-aligned. Tables and fenced code blocks follow the same width."
         }
       }
     },

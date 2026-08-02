@@ -65,8 +65,12 @@
 
 
 .mu-container {
-    max-width: 100%;
+    max-width: var(--editor-area-width, 100%);
 }
+/* Centered column: muya centers .mu-container with margin: 0 auto, so widening
+   goes full-width by default; the webview sets --editor-area-width to a ch
+   value when marktext.editor.maxContentWidth is enabled, which caps the column
+   and centers it while content inside stays left-aligned. */
 
 /* ---------------------------------------------------------------------------
    Tables.

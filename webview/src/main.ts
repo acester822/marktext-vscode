@@ -28,18 +28,22 @@ import type { IMuyaOptions, ILocale } from '@muyajs/core';
 import { setExcalidrawPost, observeExcalidrawBlocks, refreshExcalidrawBlocks } from './excalidraw-render';
 
 // ---------- host <-> webview message protocol ---------
-type InitMsg = { type: 'init'; markdown: string; theme: 'light' | 'dark'; uri: string; dev?: boolean };
+type InitMsg = { type: 'init'; markdown: string; theme: 'light' | 'dark'; uri: string; dev?: boolean; maxContentWidth?: number };
 type SetMarkdownMsg = { type: 'setMarkdown'; markdown: string };
+type ConfigMsg = { type: 'config'; maxContentWidth?: number };
 type ThemeMsg = { type: 'theme'; theme: 'light' | 'dark' };
-type WorkspaceImageMsg = { type: 'workspaceImage'; requestId: number; path: string | null };
+type WorkspaceImageMsg = { type: 'workspaceImage'; requestId: number; path: string | null; uri: string | null };
+type ResolveImageResultMsg = { type: 'resolveImageResult'; requestId: number; uri: string | null };
 type Ftr10CssMsg = { type: 'ftr10Css'; css: string };
 type RefreshExcalidrawMsg = { type: 'refreshExcalidraw'; uri: string };
-type ToWebview = InitMsg | SetMarkdownMsg | ThemeMsg | WorkspaceImageMsg | Ftr10CssMsg | RefreshExcalidrawMsg;
+type ToWebview = InitMsg | SetMarkdownMsg | ThemeMsg | WorkspaceImageMsg | ResolveImageResultMsg | Ftr10CssMsg | RefreshExcalidrawMsg | ConfigMsg;
 type FromWebview =
   | { type: 'ready' }
   | { type: 'change'; markdown: string }
   | { type: 'openExternal'; href: string }
+  | { type: 'openLocal'; href: string }
   | { type: 'requestWorkspaceImage'; requestId: number }
+  | { type: 'resolveImage'; requestId: number; src: string }
   | { type: 'excalidrawEdit'; uri: string; data: string };
 
 const vscode = (window as any).acquireVsCodeApi ? (window as any).acquireVsCodeApi() : null;
@@ -58,21 +62,84 @@ function post(msg: FromWebview) {
 
 // ---------- image picker wiring ----------
 // VS Code webviews have no filesystem access, so the host opens the file
-// dialog and returns the chosen absolute path; we expose it to muya as a
-// file:// URL.
-const pendingImages = new Map<number, (path: string | null) => void>();
+// dialog and returns the chosen absolute path (as the markdown src) plus a
+// webview URI it can actually render (raw file:// is blocked by the webview).
+const pendingImages = new Map<number, (p: { path: string | null; uri: string | null }) => void>();
 let reqSeq = 0;
 
 async function imagePathPicker(): Promise<string> {
   const requestId = ++reqSeq;
   return new Promise<string>((resolve) => {
-    pendingImages.set(requestId, (p) => resolve(p ? `file://${p}` : ''));
+    pendingImages.set(requestId, (r) => {
+      // Persist the portable relative path in the markdown. Rendering resolves
+      // it to the webview URI separately (see resolveLocalImage).
+      resolve(r?.path ?? '');
+    });
     post({ type: 'requestWorkspaceImage', requestId });
   });
 }
 
-async function imageAction(): Promise<string> {
-  return '';
+// The markdown src to persist. muya calls imageAction with {src,...} for the
+// upload path; a plain passthrough keeps the (webview-URI) src we already set,
+// which is what muya writes into the document. We don't run a real upload.
+async function imageAction(_info: { src?: string }): Promise<string> {
+  return _info?.src ?? '';
+}
+
+// ---- local image rendering ------------------------------------------------  
+// muya renders <img src="..."> straight from the markdown src. Local/relative
+// paths won't load in the webview, so after render we rewrite them to webview
+// URIs via a host round-trip. A small cache maps local src -> webview URI,
+// and a debounced observer re-scans after muya re-renders (typing, setMarkdown,
+// image insert) — the same pattern the Excalidraw decorator uses.
+const imageUriCache = new Map<string, string>(); // local src -> webview uri
+const pendingImageResolves = new Map<number, string>(); // requestId -> local src
+let resolveSeq = 0;
+
+function resolveLocalImage(src: string): void {
+  // http(s)/data URIs render fine as-is; already-known paths are cached.
+  if (/^(https?:|data:|vscode-webview:)/i.test(src) || imageUriCache.has(src)) return;
+  const requestId = ++resolveSeq;
+  pendingImageResolves.set(requestId, src);
+  post({ type: 'resolveImage', requestId, src });
+}
+
+function applyLocalImageUris() {
+  document.querySelectorAll<HTMLImageElement>('.mu-container img').forEach((img) => {
+    const src = img.getAttribute('src') || '';
+    if (!src || /^(https?:|data:|vscode-webview:)/i.test(src)) return;
+    const resolved = imageUriCache.get(src);
+    if (resolved && resolved !== src) img.setAttribute('src', resolved);
+    else resolveLocalImage(src);
+  });
+}
+
+function scanLocalImages() {
+  applyLocalImageUris();
+  // Resolve cache entries asynchronously; applying is handled in
+  // resolveImageResult. No-op while muya is mid-edit is fine — we re-scan.
+}
+
+// Debounced observer: local images may appear after muya renders (initial boot,
+// setMarkdown, paste, insert). Keep re-scanning but throttled.
+function observeLocalImages(root: HTMLElement) {
+  let t: number | undefined;
+  const obs = new MutationObserver(() => {
+    if (t !== undefined) clearTimeout(t);
+    t = window.setTimeout(scanLocalImages, 150);
+  });
+  obs.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });
+  scanLocalImages();
+}
+
+// Ignore the unused-warning: keep handler name descriptive for the switch below.
+function onResolveImageResult(requestId: number, uri: string | null) {
+  const src = pendingImageResolves.get(requestId);
+  pendingImageResolves.delete(requestId);
+  if (!src) return;
+  if (uri) imageUriCache.set(src, uri);
+  // Re-scan so any <img> with that src picks it up.
+  applyLocalImageUris();
 }
 
 // muya-core/lib/muya (where IMuyaPluginConstructor is declared) is not
@@ -94,7 +161,11 @@ use(CodeBlockLanguageSelector);
 use(LinkTools, {
   jumpClick: (linkInfo: { href?: string } | null) => {
     const href = linkInfo?.href;
-    if (href && /^https?:\/\//.test(href)) post({ type: 'openExternal', href });
+    if (!href) return;
+    // http(s)/other external schemes -> open outside. Anything else (relative
+    // file, workspace path, anchor) is resolved & opened on the host side.
+    if (/^https?:\/\//i.test(href)) post({ type: 'openExternal', href });
+    else post({ type: 'openLocal', href });
   },
 });
 use(ParagraphFrontButton);
@@ -133,7 +204,7 @@ function debounceChange() {
   }, 300);
 }
 
-function boot(markdown: string, theme: 'light' | 'dark', uri: string) {
+function boot(markdown: string, theme: 'light' | 'dark', uri: string, maxContentWidth?: number) {
   if (booted) return;
   booted = true;
   currentUri = uri;
@@ -161,7 +232,23 @@ function boot(markdown: string, theme: 'light' | 'dark', uri: string) {
   // ```excalidraw blocks currently rendered (and on future re-renders).
   setExcalidrawPost(post);
   observeExcalidrawBlocks(uri, container);
+  // Local images: render them via webview URIs (scan after muya renders).
+  observeLocalImages(container);
+  applyMaxContentWidth(maxContentWidth);
   post({ type: 'ready' });
+}
+
+// ---- editing-column width (marktext.editor.maxContentWidth) --------------
+// Tracked so a re-boot (theme switch) keeps the current value. The variable is
+// set at runtime rather than in muya-styles.css so the VS Code setting drives
+// it. 0 = full width; positive = cap to N characters (ch). Because muya already
+// centers .mu-container with `margin: 0 auto`, a capped column centres while
+// content inside stays left-aligned.
+let currentMaxWidth = 0;
+function applyMaxContentWidth(width?: number) {
+  currentMaxWidth = width && width > 0 ? Math.round(width) : 0;
+  const root = document.documentElement;
+  root.style.setProperty('--editor-area-width', currentMaxWidth > 0 ? `${currentMaxWidth}ch` : '100%');
 }
 
 function setMarkdown(markdown: string) {
@@ -177,7 +264,7 @@ function applyTheme(theme: 'light' | 'dark') {
   const md = muya.getMarkdown();
   muya.destroy();
   booted = false;
-  boot(md, theme, currentUri);
+  boot(md, theme, currentUri, currentMaxWidth);
 }
 
 // ---------- custom right-click menu (MarkText-structured, Option B) ----------
@@ -779,7 +866,12 @@ window.addEventListener('message', (ev: MessageEvent) => {
     case 'init':
       dev = !!msg.dev;
       console.log('[marktext-webview] init received (dev=' + dev + ')');
-      boot(msg.markdown, msg.theme, msg.uri);
+      boot(msg.markdown, msg.theme, msg.uri, msg.maxContentWidth);
+      break;
+    case 'config':
+      // Live update of an editor setting (e.g. maxContentWidth) without a full
+      // re-boot — the var swap is cheap and doesn't reset the caret.
+      applyMaxContentWidth(msg.maxContentWidth);
       break;
     case 'setMarkdown':
       // Log every setMarkdown we receive — if the cursor resets, this line
@@ -801,8 +893,11 @@ window.addEventListener('message', (ev: MessageEvent) => {
       break;
     }
     case 'workspaceImage':
-      pendingImages.get(msg.requestId)?.(msg.path);
+      pendingImages.get(msg.requestId)?.({ path: msg.path, uri: msg.uri });
       pendingImages.delete(msg.requestId);
+      break;
+    case 'resolveImageResult':
+      onResolveImageResult(msg.requestId, msg.uri);
       break;
     case 'refreshExcalidraw':
       // The standalone Excalidraw editor closed; force the inline SVG(s) to

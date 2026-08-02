@@ -5,20 +5,24 @@ import { buildFtr10Css, isFtr10Present, watchFtr10Theme, FTR10_COLORS_CSS_PATH }
 import { openExcalidrawEditor } from './excalidraw-editor';
 
 // ---------- message protocol (host <-> webview) ----------
-interface InitMsg { type: 'init'; markdown: string; theme: 'light' | 'dark'; uri: string; dev?: boolean; }
+interface InitMsg { type: 'init'; markdown: string; theme: 'light' | 'dark'; uri: string; dev?: boolean; maxContentWidth?: number; }
 interface SetMarkdownMsg { type: 'setMarkdown'; markdown: string; }
+interface ConfigMsg { type: 'config'; maxContentWidth?: number; }
 interface ChangeMsg { type: 'change'; markdown: string; }
 interface ReadyMsg { type: 'ready'; }
 interface ThemeMsg { type: 'theme'; theme: 'light' | 'dark'; }
 interface OpenExternalMsg { type: 'openExternal'; href: string; }
+interface OpenLocalMsg { type: 'openLocal'; href: string; }
 interface RequestImageMsg { type: 'requestWorkspaceImage'; requestId: number; }
+interface ResolveImageMsg { type: 'resolveImage'; requestId: number; src: string; }
 interface Ftr10CssMsg { type: 'ftr10Css'; css: string; }
-interface WorkspaceImageMsg { type: 'workspaceImage'; requestId: number; path: string | null; }
+interface WorkspaceImageMsg { type: 'workspaceImage'; requestId: number; path: string | null; uri: string | null; }
+interface ResolveImageResultMsg { type: 'resolveImageResult'; requestId: number; uri: string | null; }
 interface ReloadMsg { type: 'reload'; }
 interface ExcalidrawEditMsg { type: 'excalidrawEdit'; uri: string; data: string; }
 interface RefreshExcalidrawMsg { type: 'refreshExcalidraw'; uri: string; }
-type ToWebview = InitMsg | SetMarkdownMsg | ThemeMsg | WorkspaceImageMsg | ReloadMsg | Ftr10CssMsg | RefreshExcalidrawMsg;
-type FromWebview = ReadyMsg | ChangeMsg | OpenExternalMsg | RequestImageMsg | ExcalidrawEditMsg;
+type ToWebview = InitMsg | SetMarkdownMsg | ThemeMsg | WorkspaceImageMsg | ReloadMsg | Ftr10CssMsg | RefreshExcalidrawMsg | ConfigMsg | ResolveImageResultMsg;
+type FromWebview = ReadyMsg | ChangeMsg | OpenExternalMsg | OpenLocalMsg | RequestImageMsg | ResolveImageMsg | ExcalidrawEditMsg;
 
 const VIEW_TYPE = 'marktext-vscode.marktextEditor';
 // The built-in Monaco text editor. Used to flip a .md file back to the classic
@@ -50,6 +54,10 @@ function getNonce(): string {
   const c = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   for (let i = 0; i < 32; i++) t += c[Math.floor(Math.random() * c.length)];
   return t;
+}
+function getMaxContentWidth(): number {
+  const v = vscode.workspace.getConfiguration('marktext.editor').get<number>('maxContentWidth', 0);
+  return Number.isFinite(v) && v! > 0 ? Math.round(v!) : 0;
 }
 function getMdDocument(): vscode.TextDocument | undefined {
   const e = vscode.window.activeTextEditor;
@@ -109,12 +117,28 @@ interface MarkdownSession {
   uri: vscode.Uri;
   subscriptions: vscode.Disposable[];
   disposed: boolean;
+  /** Absolute dirs that must be webview-loadable (for local images). */
+  resourceRoots: Set<string>;
   bind(document: vscode.TextDocument): void;
 }
 
+/**
+ * Add an on-disk directory to the panel's localResourceRoots so the webview can
+ * fetch images from it via asWebviewUri. The set is persistent per session so
+ * re-adding the same dir is a no-op and we only touch panel.webview.options when
+ * the set actually grows.
+ */
+function addResourceRoot(session: MarkdownSession, absDir: string) {
+  if (session.resourceRoots.has(absDir)) return;
+  session.resourceRoots.add(absDir);
+  const roots = [vscode.Uri.file(path.join(EXT_ROOT, 'out')), ...Array.from(session.resourceRoots, d => vscode.Uri.file(d))];
+  session.panel.webview.options = { ...session.panel.webview.options, localResourceRoots: roots };
+}
+
+
 function createSession(panel: vscode.WebviewPanel, uri: vscode.Uri): MarkdownSession {
   const session: MarkdownSession = {
-    panel, uri, subscriptions: [], disposed: false,
+    panel, uri, subscriptions: [], disposed: false, resourceRoots: new Set(),
     bind: (document: vscode.TextDocument) => { bindDocument(session, document); },
   };
 
@@ -132,6 +156,25 @@ function createSession(panel: vscode.WebviewPanel, uri: vscode.Uri): MarkdownSes
       case 'openExternal':
         try { vscode.env.openExternal(vscode.Uri.parse(msg.href)); } catch { /* ignore */ }
         break;
+      case 'openLocal': {
+        // A relative/anchor/workspace link inside the doc. Resolve against the
+        // doc dir (anchors #... stay on the current doc; ./x.md opens x.md).
+        try {
+          const docDir = path.dirname(uri.fsPath);
+          const h = msg.href || '';
+          const target = h.startsWith('#')
+            ? uri
+            : /^[a-z][a-z0-9+.-]*:/i.test(h) && !/^file:/i.test(h)
+              ? null // true external scheme (http:, mailto:, etc.) -> not local
+              : vscode.Uri.file(path.resolve(docDir, decodeURIComponent(h.replace(/^file:\/\//i, ''))));
+          if (!target) { vscode.env.openExternal(vscode.Uri.parse(h)); break; }
+          vscode.commands.executeCommand('vscode.openWith', target, VIEW_TYPE, vscode.ViewColumn.Active).then(
+            () => { /* opened */ },
+            () => { vscode.commands.executeCommand('vscode.open', target, vscode.ViewColumn.Active); },
+          );
+        } catch { /* ignore */ }
+        break;
+      }
       case 'excalidrawEdit':
         console.log('[marktext-host] received excalidrawEdit from webview');
         openExcalidrawEditor(vscode.Uri.parse(msg.uri), msg.data, extContext!, panel);
@@ -145,8 +188,34 @@ function createSession(panel: vscode.WebviewPanel, uri: vscode.Uri): MarkdownSes
           filters: { Images: ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'] },
         }).then((files) => {
           const p = files && files[0] ? files[0].fsPath : null;
-          post(panel, { type: 'workspaceImage', requestId, path: p });
+          if (p) {
+            // Persist a *portable* relative path in the markdown (relative to
+            // the doc). Also make the image's dir webview-loadable and hand
+            // back a webview URI so it actually renders (raw file:// is
+            // blocked) — the resolver maps src->URI at render time.
+            const rel = path.relative(docDir, p).split(path.sep).join('/');
+            addResourceRoot(session, path.dirname(p));
+            const uriStr = panel.webview.asWebviewUri(vscode.Uri.file(p)).toString();
+            post(panel, { type: 'workspaceImage', requestId, path: rel, uri: uriStr });
+          } else {
+            post(panel, { type: 'workspaceImage', requestId, path: null, uri: null });
+          }
         });
+        break;
+      }
+      case 'resolveImage': {
+        // The webview hit a local image src (relative/absolute/file://) in the
+        // rendered doc. Resolve it against the doc dir, allow the webview to
+        // load its folder, and return a webview URI.
+        const requestId = msg.requestId;
+        const docDir = path.dirname(uri.fsPath);
+        let abs = msg.src;
+        if (/^file:\/\//i.test(abs)) abs = vscode.Uri.parse(abs).fsPath;
+        else if (/^https?:\/\//i.test(abs)) { post(panel, { type: 'resolveImageResult', requestId, uri: abs }); break; }
+        else if (!path.isAbsolute(abs)) abs = path.resolve(docDir, abs);
+        addResourceRoot(session, path.dirname(abs));
+        const uriStr = panel.webview.asWebviewUri(vscode.Uri.file(abs)).toString();
+        post(panel, { type: 'resolveImageResult', requestId, uri: uriStr });
         break;
       }
     }
@@ -166,7 +235,7 @@ function bindDocument(session: MarkdownSession, doc: vscode.TextDocument) {
   const uri = session.uri;
   lastSyncedMarkdown = '';
   const theme = vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.Dark ? 'dark' : 'light';
-  post(session.panel, { type: 'init', markdown: doc.getText(), theme, uri: uri.toString(), dev: devMode });
+  post(session.panel, { type: 'init', markdown: doc.getText(), theme, uri: uri.toString(), dev: devMode, maxContentWidth: getMaxContentWidth() });
 
   const sub = vscode.workspace.onDidChangeTextDocument((e) => {
     if (e.document.uri.toString() !== uri.toString()) return;
@@ -297,6 +366,10 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('marktext.editor.defaultForMarkdown')) updateEditorAssociations();
+      if (e.affectsConfiguration('marktext.editor.maxContentWidth')) {
+        const w = getMaxContentWidth();
+        sessions.forEach((s) => { if (!s.disposed) post(s.panel, { type: 'config', maxContentWidth: w }); });
+      }
     }),
   );
 

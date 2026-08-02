@@ -22,9 +22,17 @@ describe('package.json contributes.configuration', () => {
 
   it('has exactly the settings the extension reads', () => {
     // extension.ts reads: marktext.editor.defaultForMarkdown (via
-    // `marktext.editor` namespace + workbench.editorAssociations managed by it).
+    // `marktext.editor` namespace + workbench.editorAssociations managed by it)
+    // and marktext.editor.maxContentWidth.
     const keys = Object.keys(pkg.contributes.configuration.properties);
-    expect(keys).toEqual(['marktext.editor.defaultForMarkdown']);
+    expect(keys.sort()).toEqual(['marktext.editor.defaultForMarkdown', 'marktext.editor.maxContentWidth']);
+  });
+
+  it('maxContentWidth is a non-negative number, default 0 (opt-in full width)', () => {
+    const prop = pkg.contributes.configuration.properties['marktext.editor.maxContentWidth'];
+    expect(prop.type).toBe('number');
+    expect(prop.default).toBe(0);
+    expect(prop.minimum).toBe(0);
   });
 });
 

@@ -290,14 +290,32 @@ let changeTimer: number | undefined;
 // to the host, which would create a sync loop. The webview is the single
 // source of truth for its own edits; the host never bounces those back.
 let applyingExternal = false;
+// The exact markdown text of the last external setContent. debounceChange
+// suppresses ONLY a pure echo of this text; any real user edit differs from
+// it and therefore always posts, even when the flag is stale.
+let lastExternalMarkdown = '';
 
 function debounceChange() {
   if (changeTimer !== undefined) clearTimeout(changeTimer);
   changeTimer = window.setTimeout(() => {
     if (!muya) return;
-    // This change came from an external edit we just applied; don't echo it.
-    if (applyingExternal) { applyingExternal = false; return; }
     const md = muya.getMarkdown();
+    // muya's setContent sets its state directly and does NOT emit json-change
+    // (verified: setContent -> jsonState.setContent, no dispatch), so the
+    // boolean flag can stay true until the user's NEXT real edit. The old
+    // "swallow when flag set" logic then silently dropped that first edit —
+    // the "first edit after switching files doesn't save" bug: the disk-sync
+    // watcher posts a setMarkdown around the tab switch, nothing consumes the
+    // flag, and the next keystroke is eaten. Compare the serialized text
+    // instead: an edit always differs from the text we just applied, so it
+    // always posts. Only an exact echo is suppressed.
+    if (applyingExternal) {
+      applyingExternal = false;
+      if (md === lastExternalMarkdown) {
+        console.log('[marktext-webview] change matches external apply (skip echo)');
+        return;
+      }
+    }
     // Always log keystroke activity so a silent console is diagnosable.
     console.log('[marktext-webview] change -> post (len ' + md.length + ')');
     post({ type: 'change', markdown: md });
@@ -391,6 +409,7 @@ function setMarkdown(markdown: string) {
   // External edit (host -> webview). Mark it so the resulting json-change is
   // not posted back. Do NOT autofocus (would steal/reset the caret).
   applyingExternal = true;
+  lastExternalMarkdown = markdown;
   muya.setContent(markdown, false);
 }
 
@@ -420,6 +439,15 @@ function applyTheme(theme: 'light' | 'dark') {
 // while the pointer is over a header-row cell. The wrapper is re-applied on
 // every boot (a theme re-boot destroys muya and recreates the plugin
 // instances), and the old document-level listener is removed first.
+//
+// FLICKER NOTE: the toolbar floats JUST ABOVE the header row (placement top,
+// offset 0). With only the header-cell rule, moving the cursor up onto the
+// toolbar itself makes headerCellAt() return null, so our handler hides it —
+// and the engine's own listener immediately re-shows it (its predicate: the
+// point 27px below the cursor IS a cell, namely the header row the toolbar
+// floats over). That hide/show loop is the on-off flicker seen while moving
+// the cursor over the menu. The hover bridge below treats the toolbar itself
+// as part of the hover region: while the cursor is over it, keep it shown.
 // ---------------------------------------------------------------------------
 let hoverToolsInstance: Muya | null = null;
 let hoverHandler: ((e: MouseEvent) => void) | null = null;
@@ -449,12 +477,27 @@ function setupTableHoverTools() {
         tools.show(cell);
         tools.render();
       }
+    } else if (isOverTableColumnTools(e.clientX, e.clientY)) {
+      // Hover bridge: cursor is on the toolbar itself (it floats just above
+      // the header row). Leave overHeaderCell set (suppresses the engine's
+      // delayed hide) and do NOT hide — otherwise the toolbar flickers on/off
+      // (we hide it over the toolbar, the engine re-shows it 300ms later via
+      // its 27px-below predicate).
     } else {
       overHeaderCell = null;
       if (tools.status) origHide();
     }
   };
   document.addEventListener('mousemove', hoverHandler, true);
+}
+
+// Is the point (x, y) over the table column toolbar? The float wrapper is
+// `.mu-float-wrapper.mu-table-column-tools-container` with the inner container
+// `.mu-table-column-tools`; either class covers the toolbar's hit area.
+function isOverTableColumnTools(x: number, y: number): boolean {
+  return document.elementsFromPoint(x, y).some((el) =>
+    (el as HTMLElement).closest?.('.mu-table-column-tools, .mu-table-column-tools-container') != null,
+  );
 }
 
 // The first-row (header) cell of a table under (x, y), if any. muya stamps the

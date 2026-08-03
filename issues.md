@@ -2,6 +2,9 @@
 
 ## Active:
 
+- [ ] First edit after switching to another file and back does not save (2nd + subsequent edits fine). Root cause: host `setMarkdown` sets the webview's `applyingExternal` flag, but muya's `setContent` never emits `json-change` (it sets state directly), so nothing consumed the flag and the next real edit was silently swallowed. Fix: the flag now suppresses ONLY an exact text echo — any real edit posts. (verify in code-server)
+- [ ] Table column toolbar flickers on/off when moving the cursor onto the menu itself. Root cause: toolbar floats just above the header row; our hover handler hid it the moment the cursor left the cell, and the engine's own listener re-showed it 300ms later (its 27px-below predicate). Fix: hover bridge — cursor over the toolbar keeps it shown. (verify in code-server)
+
 ## Fixed:
 
 - [x] External edits never reach the webview — editing the .md from Monaco or having an agent update the file left the WYSIWYG stale. Root cause: VS Code won't auto-reload a dirty buffer from disk, and every webview edit marks the buffer dirty (applyEdit → autosave), so `onDidChangeTextDocument` never fired for disk writes. Fix: per-session disk watcher that syncs the on-disk text into the buffer + webview when it differs from what we last synced; echo guards are now per-uri so multiple files don't interfere.

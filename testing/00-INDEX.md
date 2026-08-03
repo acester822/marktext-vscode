@@ -29,7 +29,7 @@ can't: how markdown actually parses and renders in the WYSIWYG webview.**
 | [05-code-blocks.md](./05-code-blocks.md)                     | Code blocks              | Fenced w/ language, line numbers, indented (4-space) code, inline code, Prism languages              |
 | [06-math.md](./06-math.md)                                   | Math (KaTeX)             | Inline `$…$`, block `$$…$$`, `math` fence, super/subscript                                           |
 | [07-diagrams.md](./07-diagrams.md)                           | Diagrams                 | mermaid, plantuml, vega-lite, flowchart, sequence (muya's supported set)                             |
-| [08-excalidraw.md](./08-excalidraw.md)                       | Excalidraw               | ` ```excalidraw ` block renders inline SVG + Edit button                                             |
+| [08-excalidraw.md](./08-excalidraw.md)                       | Excalidraw               | `excalidraw ` block renders inline SVG + Edit button                                                 |
 | [09-footnotes-frontmatter.md](./09-footnotes-frontmatter.md) | Footnotes & front matter | YAML front matter, footnotes, task lists                                                             |
 
 ## Not supported by this extension (don't expect these)
@@ -38,7 +38,7 @@ The editor is powered by the **muya** engine (MarkText). It does **not**
 support the following — these are left out of the active test files, but
 retained in [./_mpae-reference/](./_mpae-reference/) for historical reference:
 
-- **Code chunk execution** — ` ```js {cmd=true} `, `output=html`, `continue=…`
+- **Code chunk execution** — `js {cmd=true} `, `output=html`, `continue=…`
   (that's a Markdown Preview Aces Edition feature)
 - **`@import` file imports**
 - **Interactive / selection-driven vega** — only static vega-lite renders

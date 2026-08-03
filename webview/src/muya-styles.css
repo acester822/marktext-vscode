@@ -78,10 +78,30 @@
    `.mu-table-inner` has no width, so the table shrink-wraps its content. Inside
    the (previously narrow) column that read as right-aligned once the content
    grew. Center the table block and let it use the available width.
+
+   Wide-table breakout: when the webview is wider than the text column
+   (marktext.editor.maxContentWidth, default 125ch ≈ 1000px), a table whose
+   content exceeds the column gets clipped/scrolls inside the 1000px column.
+   The `.mu-table` box is allowed to grow past the column up to
+   `--mtx-table-max-width` px (driven by marktext.editor.tableMaxWidth, default
+   1800) while leaving a fixed ~200px gap on each side of the webview, and is
+   recentered on the webview (the container is centered, so `left: 50%` +
+   `translateX(-50%)` centers the box on the container center regardless of the
+   container's own width/padding). When tableMaxWidth is 0 the min() collapses
+   and `max(100%, 0)` keeps the table inside the column (previous behavior).
    --------------------------------------------------------------------------- */
 .mu-container .mu-table {
     display: block;
     overflow-x: auto;
+}
+
+.mu-container > .mu-table {
+    /* Recenter on the webview after breaking out of the column. */
+    position: relative;
+    left: 50%;
+    transform: translateX(-50%);
+
+    width: max(100%, min(calc(100vw - 400px), var(--mtx-table-max-width, 1800px)));
 }
 
 .mu-container .mu-table-inner {

@@ -36,6 +36,6 @@ Inline footnote: you can also write[^inline] like this.
 
 ## Task lists (reminder)
 
-- [x] Front matter parses
+- [ ] Front matter parses
 - [x] Footnotes resolve
 - [ ] Something still to verify

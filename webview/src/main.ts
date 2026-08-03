@@ -20,7 +20,6 @@ import {
   TableColumnToolbar,
   TableDragBar,
   TableRowColumMenu,
-  MarkdownToHtml,
   en,
   zhCN,
 } from '@muyajs/core';
@@ -28,9 +27,9 @@ import type { IMuyaOptions, ILocale } from '@muyajs/core';
 import { setExcalidrawPost, observeExcalidrawBlocks, refreshExcalidrawBlocks } from './excalidraw-render';
 
 // ---------- host <-> webview message protocol ---------
-type InitMsg = { type: 'init'; markdown: string; theme: 'light' | 'dark'; uri: string; dev?: boolean; maxContentWidth?: number };
+type InitMsg = { type: 'init'; markdown: string; theme: 'light' | 'dark'; uri: string; dev?: boolean; maxContentWidth?: number; tableMaxWidth?: number };
 type SetMarkdownMsg = { type: 'setMarkdown'; markdown: string };
-type ConfigMsg = { type: 'config'; maxContentWidth?: number };
+type ConfigMsg = { type: 'config'; maxContentWidth?: number; tableMaxWidth?: number };
 type ThemeMsg = { type: 'theme'; theme: 'light' | 'dark' };
 type WorkspaceImageMsg = { type: 'workspaceImage'; requestId: number; path: string | null; uri: string | null };
 type ResolveImageResultMsg = { type: 'resolveImageResult'; requestId: number; uri: string | null };
@@ -51,7 +50,7 @@ let dev = false;
 
 // Always-on build marker so we can confirm which bundle is actually running
 // in the webview (guards against a stale/cached build after reinstall).
-const BUILD_ID = '2026-08-01b-external-edit';
+const BUILD_ID = '2026-08-03-v0.6.0';
 // eslint-disable-next-line no-console
 console.log(`[marktext-webview] build ${BUILD_ID} loaded`);
 
@@ -305,7 +304,7 @@ function debounceChange() {
   }, 300);
 }
 
-function boot(markdown: string, theme: 'light' | 'dark', uri: string, maxContentWidth?: number) {
+function boot(markdown: string, theme: 'light' | 'dark', uri: string, maxContentWidth?: number, tableMaxWidth?: number) {
   if (booted) return;
   booted = true;
   currentUri = uri;
@@ -336,6 +335,9 @@ function boot(markdown: string, theme: 'light' | 'dark', uri: string, maxContent
   // Local images: render them via webview URIs (scan after muya renders).
   observeLocalImages(container);
   applyMaxContentWidth(maxContentWidth);
+  applyTableMaxWidth(tableMaxWidth);
+  setupTableHoverTools();
+  setupClipboardSelectionCopy();
   // After a re-boot (theme switch) muya clears its urlMap/loadImageMap, so
   // re-seed every cached resolution so previously-rendered local images keep
   // showing. (scanLocalImages below will also re-trigger host lookups, but the
@@ -351,9 +353,20 @@ function boot(markdown: string, theme: 'light' | 'dark', uri: string, maxContent
 // centers .mu-container with `margin: 0 auto`, a capped column centres while
 // content inside stays left-aligned.
 let currentMaxWidth = 0;
+// Max width (px) tables may grow to when they exceed the text column
+// (marktext.editor.tableMaxWidth). 0 = tables never leave the column.
+let currentTableMaxWidth = 0;
 function applyMaxContentWidth(width?: number) {
   currentMaxWidth = width && width > 0 ? Math.round(width) : 0;
   applyContainerWidth();
+}
+function applyTableMaxWidth(width?: number) {
+  currentTableMaxWidth = width && width > 0 ? Math.round(width) : 0;
+  // --mtx-table-max-width drives the breakout width in muya-styles.css:
+  // .mu-table { width: max(100%, min(calc(100vw - 400px), var(--mtx-table-max-width))) }.
+  // Setting it to 0px makes min() collapse to 0 and max(100%, 0) = 100%, i.e.
+  // the table stays inside the text column (previous behavior).
+  document.documentElement.style.setProperty('--mtx-table-max-width', `${currentTableMaxWidth}px`);
 }
 // Set the width on BOTH the :root custom property (consumed by muya's
 // .mu-container max-width and the inline-math calc) AND directly on the
@@ -386,7 +399,173 @@ function applyTheme(theme: 'light' | 'dark') {
   const md = muya.getMarkdown();
   muya.destroy();
   booted = false;
-  boot(md, theme, currentUri, currentMaxWidth);
+  boot(md, theme, currentUri, currentMaxWidth, currentTableMaxWidth);
+}
+
+// ---------------------------------------------------------------------------
+// Table column toolbar on hover.
+//
+// muya only shows the table column toolbar (align / insert-left / insert-right
+// / remove column) when the pointer hovers JUST ABOVE the table top edge — the
+// engine's mousemove predicate (TableColumnToolbar.listen) requires the point
+// under the cursor to NOT be a table cell while the point 27px below IS one.
+// That's the awkward "mouse above the table" position the user stumbled onto by
+// accident. Here we drive the same float from the VS Code side: hovering any
+// cell of the FIRST ROW (the header row — the natural "applicable element" for
+// column operations) shows the toolbar immediately.
+//
+// The engine's own debounced (300ms) bubble-phase mousemove handler calls
+// hide() whenever the cursor IS over a cell, which would kill our toolbar
+// ~300ms after we show it. We wrap the instance's hide() so it is suppressed
+// while the pointer is over a header-row cell. The wrapper is re-applied on
+// every boot (a theme re-boot destroys muya and recreates the plugin
+// instances), and the old document-level listener is removed first.
+// ---------------------------------------------------------------------------
+let hoverToolsInstance: Muya | null = null;
+let hoverHandler: ((e: MouseEvent) => void) | null = null;
+function setupTableHoverTools() {
+  if (!muya) return;
+  const tools = (muya as any)._uiPlugins?.tableColumnTools as
+    | { hide: () => void; show: (el: HTMLElement) => void; render: () => void; status: boolean; _block: unknown }
+    | undefined;
+  if (!tools) return;
+  if (hoverToolsInstance === muya) return; // already driving this instance
+  if (hoverToolsInstance && hoverHandler) document.removeEventListener('mousemove', hoverHandler, true);
+  hoverToolsInstance = muya;
+
+  let overHeaderCell: HTMLElement | null = null;
+  const origHide = tools.hide.bind(tools);
+  tools.hide = () => { if (!overHeaderCell) origHide(); };
+
+  hoverHandler = (e: MouseEvent) => {
+    const cell = headerCellAt(e.clientX, e.clientY);
+    if (cell) {
+      overHeaderCell = cell;
+      const block = (cell as any).__MUYA_BLOCK__;
+      // Re-show/re-render when the hovered header cell changes; the float is
+      // cheap to reposition and the icons depend on the column's alignment.
+      if (tools._block !== block || !tools.status) {
+        tools._block = block;
+        tools.show(cell);
+        tools.render();
+      }
+    } else {
+      overHeaderCell = null;
+      if (tools.status) origHide();
+    }
+  };
+  document.addEventListener('mousemove', hoverHandler, true);
+}
+
+// The first-row (header) cell of a table under (x, y), if any. muya stamps the
+// block instance on each cell element as __MUYA_BLOCK__ and renders the header
+// as the table's first <tr> (no <thead>), so "first row" == the header.
+function headerCellAt(x: number, y: number): HTMLElement | null {
+  for (const el of document.elementsFromPoint(x, y)) {
+    const b = (el as any).__MUYA_BLOCK__;
+    if (!b || b.blockName !== 'table.cell') continue;
+    const tr = (el as HTMLElement).closest('tr');
+    if (tr && tr.parentElement && tr.parentElement.firstElementChild === tr) return el as HTMLElement;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Copy / cut: copy the RENDERED selection, not markdown.
+//
+// muya's clipboard module intercepts copy/cut (bubble on document) and, in its
+// default NORMAL mode, writes the SELECTION AS MARKDOWN to text/plain — so
+// Ctrl+C on rendered "some bold text" put "some **bold** text" (the source)
+// on the clipboard instead of what the user highlighted. We intercept in the
+// capture phase (before muya) and write the rendered selection: text/plain =
+// the visible text (window.getSelection().toString()), text/html = muya's own
+// rendered HTML for the selection (getClipboardData().html — the selection's
+// markdown compiled to HTML, cleaner than our internal contenteditable DOM).
+// Cut additionally deletes the selection through muya's cutHandler so the
+// block-state removal (images, table cells, multi-block) stays correct.
+//
+// muya's special copy modes (Copy as Markdown / HTML / Rich, code-block copy)
+// set clip.copyType before dispatching the event — those pass through
+// untouched so the menu items and code-copy button keep their own semantics.
+// ---------------------------------------------------------------------------
+let clipboardAttachedFor: Muya | null = null;
+let clipHandler: ((e: ClipboardEvent) => void) | null = null;
+function setupClipboardSelectionCopy() {
+  if (!muya) return;
+  const clip = (muya as any)?.editor?.clipboard as
+    | { copyType: string; getClipboardData?: () => { html?: string; text?: string }; cutHandler?: () => void }
+    | undefined;
+  if (!clip) return;
+  if (clipboardAttachedFor === muya) return; // already driving this instance
+  if (clipboardAttachedFor && clipHandler) {
+    document.removeEventListener('copy', clipHandler, true);
+    document.removeEventListener('cut', clipHandler, true);
+  }
+  clipboardAttachedFor = muya;
+
+  clipHandler = (e: ClipboardEvent) => {
+    const t = e.target as Element | null;
+    // Native copy inside inputs and our own UI (find bar, context menu).
+    if (t && t.closest && t.closest('input, textarea, .mtx-find-bar, .mtx-context-menu')) return;
+    // muya's special copy modes set copyType before dispatching the event.
+    if (clip.copyType && clip.copyType !== 'normal') return;
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    if (!container.contains(range.commonAncestorContainer)) return;
+    const text = selectionPlainText(range);
+    if (!text) return;
+    // Rendered HTML from muya's own serializer; fall back to the stripped DOM
+    // clone (without muya's zero-size syntax-marker spans).
+    let html = '';
+    try { html = clip.getClipboardData?.()?.html ?? ''; } catch { html = ''; }
+    if (!html) html = selectionHtml(range);
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.clipboardData) {
+      e.clipboardData.setData('text/plain', text);
+      e.clipboardData.setData('text/html', html);
+    }
+    if (e.type === 'cut') {
+      try { clip.cutHandler?.(); } catch { document.execCommand('delete'); }
+    }
+  };
+  document.addEventListener('copy', clipHandler, true);
+  document.addEventListener('cut', clipHandler, true);
+}
+
+// ---------------------------------------------------------------------------
+// Selection serialization for the clipboard.
+//
+// muya hides markdown syntax markers (`**`, backticks, link brackets, …) in
+// zero-size `.mu-hide` spans (`font-size: 0`), which are still part of the
+// DOM — so `window.getSelection().toString()` can include them and the user
+// would copy "Some **bold** text" instead of "Some bold text". Serialize the
+// selection from a DOM clone instead: drop every `.mu-hide` span, then
+// normalize block boundaries so multi-block selections read like the document
+// (cells tab-separated, rows newline-separated).
+// ---------------------------------------------------------------------------
+function selectionPlainText(range: Range): string {
+  const frag = range.cloneContents();
+  frag.querySelectorAll('.mu-hide').forEach((el) => el.remove());
+  frag.querySelectorAll('td, th').forEach((el) => {
+    if (el.parentElement) el.parentElement.insertBefore(document.createTextNode('\t'), el);
+  });
+  frag.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, blockquote, pre, div.mu-code, figure.mu-table, hr, tr').forEach((el) => {
+    if (el.parentElement) el.parentElement.insertBefore(document.createTextNode('\n'), el);
+  });
+  return (frag.textContent ?? '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function selectionHtml(range: Range): string {
+  const frag = range.cloneContents();
+  frag.querySelectorAll('.mu-hide').forEach((el) => el.remove());
+  const div = document.createElement('div');
+  div.appendChild(frag);
+  return div.innerHTML;
 }
 
 // ---------- custom right-click menu (MarkText-structured, Option B) ----------
@@ -405,19 +584,31 @@ interface MenuItem {
 }
 
 // Real actions backed by muya / browser APIs.
+// Copy the SELECTION as markdown (not the whole document). muya's clipboard
+// module serializes the current selection state to markdown — the old
+// implementation copied muya.getMarkdown(), the ENTIRE document, which is why
+// right-click "Copy as Markdown" dumped the whole .md onto the clipboard.
 function copyMarkdown() {
-  if (!muya) return;
-  const md = muya.getMarkdown();
-  navigator.clipboard?.writeText(md);
+  const clip = (muya as any)?.editor?.clipboard;
+  const data = clip?.getClipboardData?.();
+  const md = data?.text ?? '';
+  if (md) navigator.clipboard?.writeText(md);
 }
+// Copy the SELECTION as rendered HTML. muya's getClipboardData().html is the
+// selection's markdown compiled to HTML — clean rich text, not the
+// contenteditable DOM with muya's internal data-attributes.
 async function copyHtml() {
-  if (!muya) return;
-  const html = await new MarkdownToHtml(muya.getMarkdown(), muya).generate({});
-  navigator.clipboard?.writeText(html);
+  const clip = (muya as any)?.editor?.clipboard;
+  const data = clip?.getClipboardData?.();
+  const html = data?.html ?? '';
+  if (html) navigator.clipboard?.writeText(html);
 }
-async function pastePlain() {
-  const text = await navigator.clipboard.readText();
-  document.execCommand('insertText', false, text);
+// Deterministic paste: read the clipboard text and insert it as plain text
+// through muya's own machinery (fires the change event). document.execCommand
+// ('paste') is unreliable in a VS Code webview, so the old menu Paste could
+// silently no-op.
+function pastePlain() {
+  (muya as any)?.editor?.clipboard?.pasteAsPlainText?.();
 }
 
 // ---------- muya-backed actions (the previously-greyed items) ----------
@@ -629,9 +820,9 @@ const MENU: MenuItem[] = [
     { label: '', sep: true },
     { label: 'Cut', shortcut: 'Ctrl+X', action: () => document.execCommand('cut') },
     { label: 'Copy', shortcut: 'Ctrl+C', action: () => document.execCommand('copy') },
-    { label: 'Paste', shortcut: 'Ctrl+V', action: () => document.execCommand('paste') },
-    { label: 'Copy as Markdown', shortcut: 'Ctrl+Shift+C', action: copyMarkdown },
-    { label: 'Copy as HTML', action: copyHtml },
+    { label: 'Paste', shortcut: 'Ctrl+V', action: pastePlain },
+    { label: 'Copy Selection as Markdown', shortcut: 'Ctrl+Shift+C', action: copyMarkdown },
+    { label: 'Copy Selection as HTML', action: copyHtml },
     { label: 'Paste as Plain Text', shortcut: 'Ctrl+Shift+V', action: pastePlain },
     { label: '', sep: true },
     { label: 'Select All', shortcut: 'Ctrl+A', action: () => document.execCommand('selectAll') },
@@ -688,10 +879,10 @@ const MENU: MenuItem[] = [
   { label: '', sep: true },
   { label: 'Cut', shortcut: 'Ctrl+X', action: () => document.execCommand('cut') },
   { label: 'Copy', shortcut: 'Ctrl+C', action: () => document.execCommand('copy') },
-  { label: 'Paste', shortcut: 'Ctrl+V', action: () => document.execCommand('paste') },
+  { label: 'Paste', shortcut: 'Ctrl+V', action: pastePlain },
   { label: '', sep: true },
-  { label: 'Copy as Markdown', shortcut: 'Ctrl+Shift+C', action: copyMarkdown },
-  { label: 'Copy as HTML', action: copyHtml },
+  { label: 'Copy Selection as Markdown', shortcut: 'Ctrl+Shift+C', action: copyMarkdown },
+  { label: 'Copy Selection as HTML', action: copyHtml },
   { label: 'Paste as Plain Text', shortcut: 'Ctrl+Shift+V', action: pastePlain },
 ];
 
@@ -988,12 +1179,14 @@ window.addEventListener('message', (ev: MessageEvent) => {
     case 'init':
       dev = !!msg.dev;
       console.log('[marktext-webview] init received (dev=' + dev + ')');
-      boot(msg.markdown, msg.theme, msg.uri, msg.maxContentWidth);
+      boot(msg.markdown, msg.theme, msg.uri, msg.maxContentWidth, msg.tableMaxWidth);
       break;
     case 'config':
-      // Live update of an editor setting (e.g. maxContentWidth) without a full
-      // re-boot — the var swap is cheap and doesn't reset the caret.
+      // Live update of editor settings (maxContentWidth, tableMaxWidth)
+      // without a full re-boot — the var swaps are cheap and don't reset the
+      // caret.
       applyMaxContentWidth(msg.maxContentWidth);
+      applyTableMaxWidth(msg.tableMaxWidth);
       break;
     case 'setMarkdown':
       // Log every setMarkdown we receive — if the cursor resets, this line

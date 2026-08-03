@@ -5,9 +5,9 @@ import { buildFtr10Css, isFtr10Present, watchFtr10Theme, FTR10_COLORS_CSS_PATH }
 import { openExcalidrawEditor } from './excalidraw-editor';
 
 // ---------- message protocol (host <-> webview) ----------
-interface InitMsg { type: 'init'; markdown: string; theme: 'light' | 'dark'; uri: string; dev?: boolean; maxContentWidth?: number; }
+interface InitMsg { type: 'init'; markdown: string; theme: 'light' | 'dark'; uri: string; dev?: boolean; maxContentWidth?: number; tableMaxWidth?: number; }
 interface SetMarkdownMsg { type: 'setMarkdown'; markdown: string; }
-interface ConfigMsg { type: 'config'; maxContentWidth?: number; }
+interface ConfigMsg { type: 'config'; maxContentWidth?: number; tableMaxWidth?: number; }
 interface ChangeMsg { type: 'change'; markdown: string; }
 interface ReadyMsg { type: 'ready'; }
 interface ThemeMsg { type: 'theme'; theme: 'light' | 'dark'; }
@@ -31,16 +31,14 @@ const VIEW_TYPE = 'marktext-vscode.marktextEditor';
 const TEXT_EDITOR_ID = 'default';
 
 let devMode = false;
-// Per-document echo guard. Set synchronously just before we applyEdit for a
-// webview-originated change, cleared on a later macrotask (setTimeout 0). A
-// single full-document applyEdit fires MULTIPLE onDidChangeTextDocument events
-// synchronously within the applyEdit call, so a flag cleared inside the change
-// handler would miss the 2nd+ events and let the echo through.
-let applyingFromWebview = false;
-// The markdown text we last synced in EITHER direction, as a backstop for any
-// change event that fires AFTER the flag is cleared (async/late): if its text
-// (EOL + trailing-newline normalised) equals this, it is our own round-trip.
-let lastSyncedMarkdown = '';
+// Per-uri echo guard. Set synchronously just before we applyEdit for a
+// webview-originated OR disk-sync change, cleared on a later macrotask
+// (setTimeout 0). A single full-document applyEdit fires MULTIPLE
+// onDidChangeTextDocument events synchronously within the applyEdit call, so a
+// flag cleared inside the change handler would miss the 2nd+ events and let
+// the echo through. Keyed by uri so two files being synced at once don't
+// suppress each other's external-change events.
+const applyingFromWebviewUris = new Set<string>();
 
 // One editor session per TextDocument. The webview panel is provided by VS Code
 // through resolveCustomTextEditor; we re-bind it when the same document is
@@ -57,6 +55,12 @@ function getNonce(): string {
 }
 function getMaxContentWidth(): number {
   const v = vscode.workspace.getConfiguration('marktext.editor').get<number>('maxContentWidth', 0);
+  return Number.isFinite(v) && v! > 0 ? Math.round(v!) : 0;
+}
+// Max width (px) a table may grow to when it would otherwise exceed the text
+// column. 0 = tables never leave the column (previous behavior).
+function getTableMaxWidth(): number {
+  const v = vscode.workspace.getConfiguration('marktext.editor').get<number>('tableMaxWidth', 1800);
   return Number.isFinite(v) && v! > 0 ? Math.round(v!) : 0;
 }
 function getMdDocument(): vscode.TextDocument | undefined {
@@ -119,6 +123,15 @@ interface MarkdownSession {
   disposed: boolean;
   /** Absolute dirs that must be webview-loadable (for local images). */
   resourceRoots: Set<string>;
+  /**
+   * The markdown text this session last synced in EITHER direction (webview
+   * edit applied to the buffer, or external content pushed to the webview).
+   * Used as a backstop so our own round-trips (applyEdit + autosave writing
+   * the same text back to disk) are recognized and skipped. Per-session: with
+   * multiple files open, a module-global value would let one file's sync text
+   * accidentally match another file's change event.
+   */
+  lastSynced: string;
   bind(document: vscode.TextDocument): void;
 }
 
@@ -138,7 +151,7 @@ function addResourceRoot(session: MarkdownSession, absDir: string) {
 
 function createSession(panel: vscode.WebviewPanel, uri: vscode.Uri): MarkdownSession {
   const session: MarkdownSession = {
-    panel, uri, subscriptions: [], disposed: false, resourceRoots: new Set(),
+    panel, uri, subscriptions: [], disposed: false, resourceRoots: new Set(), lastSynced: '',
     bind: (document: vscode.TextDocument) => { bindDocument(session, document); },
   };
 
@@ -150,7 +163,7 @@ function createSession(panel: vscode.WebviewPanel, uri: vscode.Uri): MarkdownSes
         bindDocument(session, vscode.workspace.textDocuments.find(d => d.uri.toString() === uri.toString())!);
         break;
       case 'change':
-        lastSyncedMarkdown = msg.markdown;
+        session.lastSynced = msg.markdown;
         applyChangeToDocument(uri, msg.markdown);
         break;
       case 'openExternal':
@@ -233,26 +246,70 @@ function createSession(panel: vscode.WebviewPanel, uri: vscode.Uri): MarkdownSes
 function bindDocument(session: MarkdownSession, doc: vscode.TextDocument) {
   if (session.disposed) return;
   const uri = session.uri;
-  lastSyncedMarkdown = '';
+  session.lastSynced = '';
   const theme = vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.Dark ? 'dark' : 'light';
-  post(session.panel, { type: 'init', markdown: doc.getText(), theme, uri: uri.toString(), dev: devMode, maxContentWidth: getMaxContentWidth() });
+  post(session.panel, {
+    type: 'init', markdown: doc.getText(), theme, uri: uri.toString(), dev: devMode,
+    maxContentWidth: getMaxContentWidth(), tableMaxWidth: getTableMaxWidth(),
+  });
 
   const sub = vscode.workspace.onDidChangeTextDocument((e) => {
     if (e.document.uri.toString() !== uri.toString()) return;
-    if (applyingFromWebview) {
+    if (applyingFromWebviewUris.has(uri.toString())) {
       console.log('[marktext-host] change during our applyEdit (skip echo)');
       return;
     }
     const text = e.document.getText();
-    if (normText(text) === normText(lastSyncedMarkdown)) {
+    if (normText(text) === normText(session.lastSynced)) {
       console.log('[marktext-host] change matches synced state (skip echo)');
       return;
     }
     console.log('[marktext-host] external change -> post setMarkdown to webview (len ' + text.length + ')');
-    lastSyncedMarkdown = text;
+    session.lastSynced = text;
     post(session.panel, { type: 'setMarkdown', markdown: text });
   });
   session.subscriptions.push(sub);
+
+  // Watch the file ON DISK as well. onDidChangeTextDocument only fires when
+  // VS Code's own buffer changes, and VS Code REFUSES to auto-reload a dirty
+  // buffer from disk — which is exactly our steady state, because every
+  // webview edit lands in the buffer via applyEdit (marking it dirty) before
+  // autosave flushes to disk. So an external writer (another editor, git, an
+  // agent updating the file) that touches the file while the buffer is dirty
+  // never reaches onDidChangeTextDocument, and the webview silently goes
+  // stale. This watcher catches the disk write directly: if the on-disk text
+  // differs from what we last synced (our own autosave writes equal it and are
+  // skipped), the external content wins — replace the buffer and push it to
+  // the webview. Debounced so a partial/mid-write read is unlikely.
+  const watcher = vscode.workspace.createFileSystemWatcher(
+    new vscode.RelativePattern(path.dirname(uri.fsPath), path.basename(uri.fsPath)),
+  );
+  let diskTimer: ReturnType<typeof setTimeout> | undefined;
+  watcher.onDidChange(() => {
+    if (diskTimer !== undefined) clearTimeout(diskTimer);
+    diskTimer = setTimeout(() => {
+      diskTimer = undefined;
+      if (session.disposed) return;
+      let diskText = '';
+      try { diskText = fs.readFileSync(uri.fsPath, 'utf8'); } catch { return; } // deleted/moved
+      if (normText(diskText) === normText(session.lastSynced)) return; // our own round-trip
+      const docNow = vscode.workspace.textDocuments.find(d => d.uri.toString() === uri.toString());
+      if (!docNow) return;
+      if (normText(diskText) === normText(docNow.getText())) return; // buffer already matches
+      console.log('[marktext-host] disk change -> sync buffer + webview (len ' + diskText.length + ')');
+      session.lastSynced = diskText;
+      applyingFromWebviewUris.add(uri.toString());
+      const edit = new vscode.WorkspaceEdit();
+      edit.replace(uri, new vscode.Range(0, 0, docNow.lineCount, 0), diskText);
+      vscode.workspace.applyEdit(edit);
+      setTimeout(() => { applyingFromWebviewUris.delete(uri.toString()); }, 0);
+      post(session.panel, { type: 'setMarkdown', markdown: diskText });
+    }, 300);
+  });
+  session.subscriptions.push(
+    watcher,
+    { dispose: () => { if (diskTimer !== undefined) clearTimeout(diskTimer); } },
+  );
 
   const themeSub = vscode.window.onDidChangeActiveColorTheme((t) => {
     post(session.panel, { type: 'theme', theme: t.kind === vscode.ColorThemeKind.Dark ? 'dark' : 'light' });
@@ -264,12 +321,13 @@ function applyChangeToDocument(uri: vscode.Uri, markdown: string) {
   const doc = vscode.workspace.textDocuments.find(d => d.uri.toString() === uri.toString());
   if (!doc) return;
   if (doc.getText() === markdown) return;
-  applyingFromWebview = true;
-  lastSyncedMarkdown = markdown;
+  const session = sessions.get(uri.toString());
+  if (session) session.lastSynced = markdown;
+  applyingFromWebviewUris.add(uri.toString());
   const edit = new vscode.WorkspaceEdit();
   edit.replace(uri, new vscode.Range(0, 0, doc.lineCount, 0), markdown);
   vscode.workspace.applyEdit(edit);
-  setTimeout(() => { applyingFromWebview = false; }, 0);
+  setTimeout(() => { applyingFromWebviewUris.delete(uri.toString()); }, 0);
 }
 
 function activeMdUri(): vscode.Uri | undefined {
@@ -366,9 +424,10 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('marktext.editor.defaultForMarkdown')) updateEditorAssociations();
-      if (e.affectsConfiguration('marktext.editor.maxContentWidth')) {
+      if (e.affectsConfiguration('marktext.editor.maxContentWidth') || e.affectsConfiguration('marktext.editor.tableMaxWidth')) {
         const w = getMaxContentWidth();
-        sessions.forEach((s) => { if (!s.disposed) post(s.panel, { type: 'config', maxContentWidth: w }); });
+        const tw = getTableMaxWidth();
+        sessions.forEach((s) => { if (!s.disposed) post(s.panel, { type: 'config', maxContentWidth: w, tableMaxWidth: tw }); });
       }
     }),
   );

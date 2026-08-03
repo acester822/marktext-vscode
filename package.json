@@ -2,7 +2,7 @@
   "name": "marktext-vscode",
   "displayName": "MarkText Editor",
   "description": "WYSIWYG Markdown editor for VS Code, powered by MarkText's @muyajs/core (muya) engine.",
-  "version": "0.5.5",
+  "version": "0.6.0",
   "publisher": "marktext-vscode",
   "license": "MIT",
   "engines": {
@@ -43,6 +43,12 @@
           "default": 125,
           "minimum": 0,
           "description": "Max width of the editing column, in characters (ch units). The column is capped at this width and centered in the webview (margins on both sides) while text stays left-aligned inside it. Default 125. Set to 0 to fill the webview's full width instead. Tables and fenced code blocks follow the same width."
+        },
+        "marktext.editor.tableMaxWidth": {
+          "type": "number",
+          "default": 1800,
+          "minimum": 0,
+          "description": "Max width, in pixels, that a table may grow to when its content exceeds the editing column and the webview has room. The table breaks out of the column and is recentered in the webview, leaving a ~200px gap on each side. Default 1800. Set to 0 to keep tables inside the text column (previous behavior)."
         }
       }
     },

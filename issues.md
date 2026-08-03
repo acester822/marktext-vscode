@@ -2,16 +2,21 @@
 
 ## Active:
 
-- [ ] Add a max width of 125 characters then wrap and if the webview is wider, center the content in the webview, please note, I still want the alignment of the content itself to be left aligned like normal. Hopefully that makes sense.
-
-  - [ ] Make sure that tables and fenced items also follow this restriction
-
-- [ ] Image insertion does not appear to work, the image menu pops up, and all clicks inside the menu appear to work, it just doesn't do anything. Adding a local image does correctly launch the "pick the file" within Codeserver like it should, but when I find and select the image nothing happens, here is an example
-
-  - ![Pic Of Something](./assets/menu-icon-dark.png) `Internal Link`
-  - ![Pic Of Something 2](https://github.com/acester822/marktext-vscode/blob/32fa54b319e6df6c99d0ebe2e4b3c2ec874b5266/assets/menu-icon-dark.png) `External Link`
-
 ## Fixed:
+
+- [x] External edits never reach the webview — editing the .md from Monaco or having an agent update the file left the WYSIWYG stale. Root cause: VS Code won't auto-reload a dirty buffer from disk, and every webview edit marks the buffer dirty (applyEdit → autosave), so `onDidChangeTextDocument` never fired for disk writes. Fix: per-session disk watcher that syncs the on-disk text into the buffer + webview when it differs from what we last synced; echo guards are now per-uri so multiple files don't interfere.
+- [x] Table toolbar (add/remove/align columns) only appeared when hovering just above the table's top edge — now it also shows automatically whenever the pointer is over the table's header row. The engine's delayed hide is suppressed while hovering.
+- [x] Copy/paste erratic: Ctrl+C copied the markdown source (`**bold**`) instead of the rendered selection, and right-click "Copy as Markdown" dumped the ENTIRE .md. Fix: Ctrl+C/X now copy the rendered selection (plain + rich HTML, markdown syntax markers stripped); "Copy Selection as Markdown/HTML" are selection-scoped; Paste uses muya's pasteAsPlainText instead of the unreliable execCommand('paste').
+- [x] Wide tables were cut off at the 1000px (125ch) column. New setting `marktext.editor.tableMaxWidth` (default 1800px; 0 = old behavior) lets tables break out of the column and recenter in the webview (fixed ~200px gap each side), so a 2200px webview gets ~1800px of table.
+- [x] Add a max width of 125 characters then wrap and if the webview is wider, center the content in the webview, please note, I still want the alignment of the content itself to be left aligned like normal. Hopefully that makes sense.
+
+  - [x] Make sure that tables and fenced items also follow this restriction
+
+- [x] Image insertion does not appear to work, the image menu pops up, and all clicks inside the menu appear to work, it just doesn't do anything. Adding a local image does correctly launch the "pick the file" within Codeserver like it should, but when I find and select the image nothing happens, here is an example
+
+  - ![Pic Of Something](assets/menu-icon-light.png) `Internal Link`
+
+  - ![Pic Of Something 2](https://github.com/acester822/marktext-vscode/blob/32fa54b319e6df6c99d0ebe2e4b3c2ec874b5266/assets/menu-icon-dark.png?raw=true) `External Link`
 
 - [x] Local links not working, for example, [05-code-blocks.md](./05-code-blocks.md), when I hover over it I see the little menu pop up underneath it, one icon to unlink, one icon to follow the link, but clicking on the follow button does not work
 - [x] Cursor behavior needs further refining, if you are going thru a doc in the editor with arrows, the positioning in between lines needs to match up better to the rendered content, aka I navigate down, the cursor should show up the line down right below where I was editing

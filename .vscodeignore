@@ -7,3 +7,10 @@ tsconfig.json
 **/*.ts
 **/*.map
 test-harness.html
+harness.js
+vendor/**
+testing/**
+*.bak
+install-extension.sh
+issues.md
+*.vsix

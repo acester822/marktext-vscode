@@ -5,6 +5,10 @@
   "version": "0.6.2",
   "publisher": "marktext-vscode",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/acester822/marktext-vscode.git"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },

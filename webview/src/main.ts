@@ -50,7 +50,7 @@ let dev = false;
 
 // Always-on build marker so we can confirm which bundle is actually running
 // in the webview (guards against a stale/cached build after reinstall).
-const BUILD_ID = '2026-08-03-v0.6.0';
+const BUILD_ID = '2026-08-05-v0.6.2';
 // eslint-disable-next-line no-console
 console.log(`[marktext-webview] build ${BUILD_ID} loaded`);
 

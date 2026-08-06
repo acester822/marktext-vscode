@@ -132,6 +132,16 @@ interface MarkdownSession {
    * accidentally match another file's change event.
    */
   lastSynced: string;
+  /**
+   * Host-side time (Date.now()) at which the most recent webview-originated
+   * change was applied to the buffer. The disk watcher only treats a write as
+   * an external change if the file's mtime is NEWER than this — our own
+   * autosave always lags the edit that caused it, so without this guard a
+   * stale autosave write re-read after the user typed past it was mistaken
+   * for an external write and clobbered the buffer + webview (typed text
+   * vanished, caret reset).
+   */
+  lastEditAt: number;
   bind(document: vscode.TextDocument): void;
 }
 
@@ -151,7 +161,7 @@ function addResourceRoot(session: MarkdownSession, absDir: string) {
 
 function createSession(panel: vscode.WebviewPanel, uri: vscode.Uri): MarkdownSession {
   const session: MarkdownSession = {
-    panel, uri, subscriptions: [], disposed: false, resourceRoots: new Set(), lastSynced: '',
+    panel, uri, subscriptions: [], disposed: false, resourceRoots: new Set(), lastSynced: '', lastEditAt: 0,
     bind: (document: vscode.TextDocument) => { bindDocument(session, document); },
   };
 
@@ -164,6 +174,7 @@ function createSession(panel: vscode.WebviewPanel, uri: vscode.Uri): MarkdownSes
         break;
       case 'change':
         session.lastSynced = msg.markdown;
+        session.lastEditAt = Date.now();
         applyChangeToDocument(uri, msg.markdown);
         break;
       case 'openExternal':
@@ -247,6 +258,7 @@ function bindDocument(session: MarkdownSession, doc: vscode.TextDocument) {
   if (session.disposed) return;
   const uri = session.uri;
   session.lastSynced = '';
+  session.lastEditAt = 0;
   const theme = vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.Dark ? 'dark' : 'light';
   post(session.panel, {
     type: 'init', markdown: doc.getText(), theme, uri: uri.toString(), dev: devMode,
@@ -281,6 +293,17 @@ function bindDocument(session: MarkdownSession, doc: vscode.TextDocument) {
   // differs from what we last synced (our own autosave writes equal it and are
   // skipped), the external content wins — replace the buffer and push it to
   // the webview. Debounced so a partial/mid-write read is unlikely.
+  //
+  // STALE-WRITE GUARD (v0.6.2): content equality is NOT enough to recognize
+  // our own round-trip. If the user posts a new edit between the autosave
+  // write and this debounced read, `lastSynced` has moved PAST the on-disk
+  // text — the disk copy is our own stale autosave, but it no longer matches,
+  // and the watcher would treat it as an external change and clobber the
+  // buffer + webview with older text (typed text vanishes, caret resets). So
+  // a write may only win if its mtime is NEWER than the last webview edit we
+  // applied. Our own autosave always lags the edit that caused it (older
+  // mtime) and is skipped; a genuine external write made after the last edit
+  // still syncs.
   const watcher = vscode.workspace.createFileSystemWatcher(
     new vscode.RelativePattern(path.dirname(uri.fsPath), path.basename(uri.fsPath)),
   );
@@ -290,6 +313,11 @@ function bindDocument(session: MarkdownSession, doc: vscode.TextDocument) {
     diskTimer = setTimeout(() => {
       diskTimer = undefined;
       if (session.disposed) return;
+      // Skip writes older than the last webview-originated edit: they are our
+      // own autosave round-trips, never newer external content.
+      try {
+        if (fs.statSync(uri.fsPath).mtimeMs <= session.lastEditAt) return;
+      } catch { return; } // deleted/moved
       let diskText = '';
       try { diskText = fs.readFileSync(uri.fsPath, 'utf8'); } catch { return; } // deleted/moved
       if (normText(diskText) === normText(session.lastSynced)) return; // our own round-trip
